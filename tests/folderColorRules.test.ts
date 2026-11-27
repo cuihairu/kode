@@ -84,6 +84,13 @@ describe('folderColorRules(目录着色纯核)', () => {
       const nested = face('/ws/sub/docs/deep/x.md')!;
       expect(nested.colorId).toBe('charts.blue');
     });
+    it('目录自身也命中尾双星规则(用户令:folderColors 对目录生效)', () => {
+      const dirFace = resolveFolderColor('/ws/docs', { ...CTX, isDirectory: true });
+      expect(dirFace?.badge).toBe('D');
+      expect(dirFace?.colorId).toBe('charts.blue');
+      const nestedDir = resolveFolderColor('/ws/sub/logs', { ...CTX, isDirectory: true });
+      expect(nestedDir?.colorId).toBe('charts.red');
+    });
     it('configs → C + charts.purple;logs → L + charts.red', () => {
       expect(face('/ws/configs/hybridcell.xml')?.colorId).toBe('charts.purple');
       expect(face('/ws/logs/baseapp.log')?.colorId).toBe('charts.red');

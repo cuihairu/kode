@@ -34,7 +34,7 @@ const ASSETS_FACE: FolderColorFace = { badge: 'A', colorId: 'charts.orange', sem
 interface Harness {
   provider: FolderColorDecorationProvider;
   isActive: { value: boolean };
-  resolveFace: (fsPath: string) => FolderColorFace | null;
+  resolveFace: (fsPath: string, isDirectory: boolean) => FolderColorFace | null;
   isDirectory: { value: boolean };
 }
 
@@ -43,7 +43,7 @@ const makeHarness = (active = true): Harness => {
   const isDirectory = { value: false };
   const provider = new FolderColorDecorationProvider({
     isActive: () => isActive.value,
-    resolveFace: fsPath => (fsPath.startsWith('/ws/assets/') ? ASSETS_FACE : null),
+    resolveFace: (fsPath, _isDir) => (fsPath.startsWith('/ws/assets/') ? ASSETS_FACE : null),
     isDirectory: _fsPath => isDirectory.value
   });
   return { provider, isActive, resolveFace: () => null, isDirectory };
@@ -67,10 +67,12 @@ describe('FolderColorDecorationProvider(文件树角标)', () => {
     expect(decoration!.tooltip).toContain('Assets');
   });
 
-  it('目录 → 零输出(钉子⑧:无文件夹底色 API,只装饰文件)', async () => {
+  it('目录 → 也输出角标(用户令:folderColors 要对目录生效)', async () => {
     const harness = makeHarness(true);
     harness.isDirectory.value = true;
-    expect(await decorate(harness, '/ws/assets/entities')).toBeUndefined();
+    const decoration = await decorate(harness, '/ws/assets/entities');
+    expect(decoration!.badge).toBe('A');
+    expect(decoration!.color).toBeInstanceOf(vscode.ThemeColor);
   });
 
   it('门开但无规则命中 → 零输出', async () => {
@@ -191,14 +193,14 @@ describe('activateFolderColorDecorations(装配到 fake 工作区)', () => {
     expect((decoration?.color as vscode.ThemeColor)?.id).toBe('charts.blue');
   });
 
-  it('目录零输出(stat 判目录,钉子⑧)', async () => {
+  it('目录也输出角标(用户令:folderColors 对目录生效,stat 判目录后传 isDirectory)', async () => {
     memoryFileSystem.setDirectory('/ws/docs', [['a.md', 1]]);
     const provider = activateFolderColorDecorations({ context, onGateChanged: () => (gateChanged += 1) });
     const decoration = await provider.provideFileDecoration(
       vscode.Uri.file('/ws/docs'),
       new vscode.CancellationToken()
     );
-    expect(decoration).toBeUndefined();
+    expect(decoration?.badge).toBe('D');
   });
 
   it('主题切换不再影响门(2026-11-27 用户令:单条件);开关翻转仍即时生效', async () => {

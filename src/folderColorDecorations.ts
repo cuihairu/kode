@@ -15,8 +15,8 @@ import { l10nText } from './nlsRuntime';
 export interface FolderColorDecorationDeps {
   /** 双条件门(开关开启+Kode 主题族,用户令终版口径);每次呈现时求值 */
   isActive(): boolean;
-  /** 路径语义解析(纯核注入;null=无规则命中,不装饰) */
-  resolveFace(fsPath: string): FolderColorFace | null;
+  /** 路径语义解析(纯核注入;null=无规则命中,不装饰)。目录也可传入(目录自身着色) */
+  resolveFace(fsPath: string, isDirectory: boolean): FolderColorFace | null;
   /** 目录判定(只装饰文件,目录本身零输出——无文件夹底色 API,如实不装) */
   isDirectory(fsPath: string): boolean | Promise<boolean>;
 }
@@ -59,10 +59,8 @@ export class FolderColorDecorationProvider implements vscode.FileDecorationProvi
     if (!this.deps.isActive()) {
       return undefined;
     }
-    if (await this.deps.isDirectory(uri.fsPath)) {
-      return undefined;
-    }
-    const face = this.deps.resolveFace(uri.fsPath);
+    const isDir = await this.deps.isDirectory(uri.fsPath);
+    const face = this.deps.resolveFace(uri.fsPath, isDir);
     if (face === null) {
       return undefined;
     }

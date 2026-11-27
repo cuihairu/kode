@@ -122,7 +122,7 @@ export function activateFolderColorDecorations(deps: FolderColorActivationDeps):
 
   const provider = new FolderColorDecorationProvider({
     isActive: () => folderColorsGateNow(readEnabled(), readThemeLabel()),
-    resolveFace: fsPath => {
+    resolveFace: (fsPath, isDirectory) => {
       const workspaceRoot = workspaceRootFor(fsPath);
       if (workspaceRoot === null) {
         return null;
@@ -131,7 +131,8 @@ export function activateFolderColorDecorations(deps: FolderColorActivationDeps):
       return resolveFolderColor(fsPath, {
         workspaceRoot,
         assetsRoot: profile?.assetsRoot || undefined,
-        rules: readRules()
+        rules: readRules(),
+        isDirectory
       });
     },
     isDirectory: async fsPath => {

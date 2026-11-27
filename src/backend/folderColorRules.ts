@@ -74,6 +74,8 @@ export interface FolderColorResolveContext {
   readonly assetsRoot?: string;
   /** 用户规则集(缺省=内置默认) */
   readonly rules?: readonly FolderColorRule[];
+  /** 目标路径是否目录(目录本身也要能命中尾双星规则——末尾补哨兵段再匹配) */
+  readonly isDirectory?: boolean;
 }
 
 /** 路径归一:\ → /(工程实测两平台都会进来),重复分隔压缩 */
@@ -176,9 +178,14 @@ export function resolveFolderColor(fsPath: string, ctx: FolderColorResolveContex
     // 绝对形态 glob(展开后的 `{assetsRoot}` 等):/ 开头或盘符开头;其余按
     // 工作区根相对匹配
     const absolutePattern = pattern.startsWith('/') || /^[A-Za-z]:/.test(pattern);
-    const hit = absolutePattern
-      ? matcher.test(absolute)
-      : relative !== null && matcher.test(relative);
+    // 目录自身命中:规则 glob 多为尾双星形式(要求子路径),
+    // 目录本身(如 docs)匹配不到。补哨兵子段再测,让目录吃到自己的规则。
+    const probe = ctx.isDirectory
+      ? (absolutePattern ? `${absolute}/__kode_dir__` : (relative !== null ? `${relative}/__kode_dir__` : null))
+      : null;
+    const hit =
+      (absolutePattern ? matcher.test(absolute) : relative !== null && matcher.test(relative)) ||
+      (probe !== null && matcher.test(probe));
     if (!hit) {
       continue;
     }
