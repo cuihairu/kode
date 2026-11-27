@@ -27,7 +27,7 @@
 - [x] 大文件拆分裁定(用户令「大文件拆的合理些」):self_flow.rs **不拆**——单 LANG-NAR-1 迁移单元,按状态机段硬切会把共享契约拉裂成七处同步;entityMapping.ts 外提**缓拆**——领域表内聚,外提只搬行数不减复杂度。落注记不做机械拆分。
 
 待点火(审计发现按预算呈报,未修):
-- [ ] 插件面 HIGH:wireshark 插件 per-frame summaries/trees 表无界增长(长抓包内存爬升)——需 cap+ring 策略小批。
+- [x] 插件面 HIGH:wireshark 插件 per-frame summaries/trees 表无界增长(长抓包内存爬升)——需 cap+ring 策略小批。(cf98e7d3:FrameCache 环形窗口(cap 默认 8192,0=不设限)+ frame_cache_cap 首选项 + 双语文档对账;crate 补 lib 目标跑通 5 单测;淘汰帧重放走既有 replay 中性臂)
 - [ ] CI 面 MED 五条:nightly edit-before-upload 时序窗/verify-platform-set 漏插件 zip/ci.yml if-no-files-found 恒绿缝/engine-integration 空转绿/cleanup 进程替换吞错。
 - [ ] kb_index temp 累积残差(刻意设计的代价面,需清理策略小批)。
 - [ ] ⑧ 同族残余:`kbengine.ai.model` 等五键仍工作区可覆盖(非网络目的地,低危,随下一批顺手收编)。
