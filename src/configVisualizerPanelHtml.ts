@@ -169,13 +169,19 @@ export function renderConfigVisualizerWebview(options: ConfigVisualizerWebviewOp
       font-size: var(--kode-t-tag); padding: 1px 8px; border-radius: 10px;
     }
     .state-badge i { width: 7px; height: 7px; display: inline-block; }
-    /* 三态不靠颜色单通道(§4.1):文字徽标 + 形状差异(◦ 圆点/■ 方角/● 实心圆) */
+    /* 三态不靠颜色单通道(§4.1):文字徽标 + 互不相同的形状
+       defaults-only=空心圆(◦) / overridden=方角(■) / custom-only=菱形(◆)。
+       旧实现 defaults-only 与 custom-only 同为圆(border-radius:50%)，两个图标一样，
+       色觉障碍或灰度下三态不可分——这里把 custom-only 改菱形，形状三态互斥。 */
     .state-badge.defaults-only { background: rgba(128,128,128,.15); color: var(--kode-fg-2); }
     .state-badge.defaults-only i { border: 1px solid var(--kode-neutral); border-radius: 50%; }
     .state-badge.overridden { background: var(--kode-info-dim); color: var(--kode-info); }
     .state-badge.overridden i { background: var(--kode-info); border-radius: 1px; }
     .state-badge.custom-only { background: var(--kode-ok-dim); color: var(--kode-ok); }
-    .state-badge.custom-only i { background: var(--kode-ok); border-radius: 50%; }
+    .state-badge.custom-only i {
+      background: var(--kode-ok); border-radius: 1px;
+      transform: rotate(45deg) scale(.85);
+    }
 
     .detail-path {
       font-family: var(--kode-mono); font-size: var(--kode-t-meta);
