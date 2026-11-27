@@ -891,5 +891,14 @@
   "No .def property references {type}.": "没有 .def 属性引用 {type}。",
   "Def properties ({count})": "Def 属性（{count}）",
   "via {chain}": "经 {chain}",
-  ".py access points ({count})": ".py 访问点（{count}）"
+  ".py access points ({count})": ".py 访问点（{count}）",
+  "Field channel lookup is disabled (kbengine.fieldChannels.enabled).": "字段通道查询已关闭（kbengine.fieldChannels.enabled）。",
+  "No field or property match \"{target}\".": "没有字段或属性匹配「{target}」。",
+  "Select the field or property to inspect": "选择要查看的字段或属性",
+  "Channels of {target}": "{target} 的通道",
+  "Wire encode": "wire 编码",
+  "Wire decode (client)": "wire 解码（客户端）",
+  "Not persisted": "不落库",
+  "Stale impl anchors ({count})": "过期实现锚点（{count}）",
+  "No longer a declared field of {type}": "不再是 {type} 的声明字段"
 }

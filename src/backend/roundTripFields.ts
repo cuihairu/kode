@@ -97,18 +97,18 @@ export function renderRoundTripDecodeOnlyMessage(
 }
 
 /** 一个可闭合字面量形态:键 → 键位点;open = 展开/推导式/动态键。 */
-interface LiteralShape {
+export interface LiteralShape {
   keys: Map<string, { line: number; character: number }>;
   open: boolean;
 }
 
 /** encode 键集推导结果;kind 'unknown' = 有不可解析 return 位或透传对象。 */
-type EncodeShape =
+export type EncodeShape =
   | { kind: 'literal'; keys: Map<string, { line: number; character: number }> }
   | { kind: 'unknown' };
 
 /** decode 键集推导结果;passthrough = return 入参/{**入参}。 */
-interface DecodeShape {
+export interface DecodeShape {
   reads: Map<string, { line: number; character: number }>;
   open: boolean;
   passthrough: boolean;
@@ -136,7 +136,7 @@ function literalShapeOf(matched: MatchedBraces): LiteralShape {
  * (直接或别名)才返回 literal;字面量后单段字面量键写点并入键集;任何
  * 未知 return / 开放形态 / 动态键写 / setdefault / update → unknown。
  */
-function encodeShapeOf(
+export function encodeShapeOf(
   masked: readonly string[],
   realLines: readonly string[],
   input: ImplMethodInputBinding
@@ -309,7 +309,7 @@ function encodeShapeOf(
  * 首段键集;透传 return / `{**入参}` → passthrough;动态键写/非字面量
  * 下标写/setdefault/update → open。
  */
-function decodeShapeOf(
+export function decodeShapeOf(
   masked: readonly string[],
   realLines: readonly string[],
   input: ImplMethodInputBinding
@@ -433,7 +433,53 @@ function decodeShapeOf(
  * 开放/decode 透传 → 该容器零产出。E−声明与声明−E 分别归 SER-03 车道、
  * D−声明归 SER-04 车道,此处只在 声明∩ 键集内裁差。
  */
+// Content-identity memo (IDX-REL-003): diagnostics re-run on unchanged
+// documents (config/registry triggers re-diagnose without an edit), so the
+// shape derivation must not redo its work. Keyed by the full inputs (text +
+// binding scopes); bounded — when over budget the oldest entry is evicted.
+const roundTripMemo = new Map<string, RoundTripFieldFinding[]>();
+const ROUND_TRIP_MEMO_MAX = 128;
+const roundTripMemoStats = { hits: 0, misses: 0 };
+
+/** Memo observability (tests + diagnostics budget audits) */
+export function getRoundTripMemoStats(): { hits: number; misses: number; entries: number } {
+  return { hits: roundTripMemoStats.hits, misses: roundTripMemoStats.misses, entries: roundTripMemo.size };
+}
+
+export function clearRoundTripMemoForTests(): void {
+  roundTripMemo.clear();
+  roundTripMemoStats.hits = 0;
+  roundTripMemoStats.misses = 0;
+}
+
+const bindingKey = (binding: ImplMethodInputBinding): string =>
+  `${binding.container.name}@${binding.defLine}:${binding.bodyStartLine}-${binding.bodyEndLine}:${binding.paramName}`;
+
 export function computeRoundTripFieldFindings(
+  text: string,
+  createInputs: readonly ImplMethodInputBinding[],
+  getInputs: readonly ImplMethodInputBinding[]
+): RoundTripFieldFinding[] {
+  const memoKey = `${text}\u0000${createInputs.map(bindingKey).join(',')}\u0000${getInputs.map(bindingKey).join(',')}`;
+  const memoHit = roundTripMemo.get(memoKey);
+  if (memoHit) {
+    roundTripMemoStats.hits += 1;
+    return memoHit;
+  }
+  roundTripMemoStats.misses += 1;
+  const findings = computeRoundTripFieldFindingsUncached(text, createInputs, getInputs);
+  if (roundTripMemo.size >= ROUND_TRIP_MEMO_MAX) {
+    const oldest = roundTripMemo.keys().next().value;
+    if (oldest !== undefined) {
+      roundTripMemo.delete(oldest);
+    }
+  }
+  roundTripMemo.set(memoKey, findings);
+  return findings;
+}
+
+/** Unmemoized body of computeRoundTripFieldFindings (same contract). */
+function computeRoundTripFieldFindingsUncached(
   text: string,
   createInputs: readonly ImplMethodInputBinding[],
   getInputs: readonly ImplMethodInputBinding[]

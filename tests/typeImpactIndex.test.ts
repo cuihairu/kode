@@ -72,6 +72,18 @@ describe('typeImpactIndex', () => {
       expect(edges).toHaveLength(0);
     });
 
+    it('reads the DB persistence flag (default off, literal "true" persists)', () => {
+      const edges = extractDefPropertyEdges(
+        '<root><Properties>' +
+          '<Property><Name>a</Name><Type>UINT16</Type></Property>' +
+          '<Property><Name>b</Name><Type>UINT16</Type><Persistent>true</Persistent></Property>' +
+          '<Property><Name>c</Name><Type>UINT16</Type><Persistent>True</Persistent></Property>' +
+          '</Properties></root>',
+        'E', 'E.def'
+      );
+      expect(edges.map(edge => edge.persistent)).toEqual([false, true, true]);
+    });
+
     it('skips malformed Property entries missing a name', () => {
       const edges = extractDefPropertyEdges(
         '<root><Properties><Property><Type>Foo</Type></Property></Properties></root>',
@@ -120,7 +132,7 @@ describe('typeImpactIndex', () => {
 
     it('returns direct references', () => {
       const edges: DefPropertyEdge[] = [
-        { entity: 'E1', filePath: 'e1.def', property: 'data', declaredType: 'A', ofRef: null, line: 5 }
+        { entity: 'E1', filePath: 'e1.def', property: 'data', declaredType: 'A', ofRef: null, persistent: false, line: 5 }
       ];
       const result = impactOf('A', makeGraph(), new Map([['e1.def', edges]]));
       expect(result).toEqual([expect.objectContaining({ entity: 'E1', filePath: 'e1.def', property: 'data', line: 5, via: [] })]);
@@ -128,7 +140,7 @@ describe('typeImpactIndex', () => {
 
     it('resolves transitive closure through alias chains', () => {
       const edges: DefPropertyEdge[] = [
-        { entity: 'E1', filePath: 'e1.def', property: 'data', declaredType: 'A', ofRef: null, line: 5 }
+        { entity: 'E1', filePath: 'e1.def', property: 'data', declaredType: 'A', ofRef: null, persistent: false, line: 5 }
       ];
       const result = impactOf('C', makeGraph(), new Map([['e1.def', edges]]));
       expect(result).toHaveLength(1);
@@ -138,7 +150,7 @@ describe('typeImpactIndex', () => {
 
     it('matches ARRAY element type', () => {
       const edges: DefPropertyEdge[] = [
-        { entity: 'E1', filePath: 'e1.def', property: 'list', declaredType: 'ARRAY', ofRef: 'C', line: 8 }
+        { entity: 'E1', filePath: 'e1.def', property: 'list', declaredType: 'ARRAY', ofRef: 'C', persistent: false, line: 8 }
       ];
       const result = impactOf('C', makeGraph(), new Map([['e1.def', edges]]));
       expect(result).toHaveLength(1);
@@ -149,7 +161,7 @@ describe('typeImpactIndex', () => {
     it('propagates to types that reference the queried type; builtin never matches', () => {
       const edges: DefPropertyEdge[] = [
         { entity: 'E1', filePath: 'e1.def', property: 'hp', declaredType: 'UINT16', ofRef: null, line: 2 },
-        { entity: 'E2', filePath: 'e2.def', property: 'flag', declaredType: 'D', ofRef: null, line: 3 }
+        { entity: 'E2', filePath: 'e2.def', property: 'flag', declaredType: 'D', ofRef: null, persistent: false, line: 3 }
       ];
       const result = impactOf('C', makeGraph(), new Map([['e1.def', edges.slice(0, 1)], ['e2.def', edges.slice(1)]]));
       // D references C, so a property typed D is affected; UINT16 is not declared.
@@ -159,9 +171,9 @@ describe('typeImpactIndex', () => {
 
     it('returns entries sorted by filePath then line then property', () => {
       const edges: DefPropertyEdge[] = [
-        { entity: 'E2', filePath: 'b.def', property: 'beta', declaredType: 'C', ofRef: null, line: 10 },
-        { entity: 'E1', filePath: 'a.def', property: 'alpha', declaredType: 'C', ofRef: null, line: 5 },
-        { entity: 'E1', filePath: 'a.def', property: 'gamma', declaredType: 'C', ofRef: null, line: 5 }
+        { entity: 'E2', filePath: 'b.def', property: 'beta', declaredType: 'C', ofRef: null, persistent: false, line: 10 },
+        { entity: 'E1', filePath: 'a.def', property: 'alpha', declaredType: 'C', ofRef: null, persistent: false, line: 5 },
+        { entity: 'E1', filePath: 'a.def', property: 'gamma', declaredType: 'C', ofRef: null, persistent: false, line: 5 }
       ];
       const result = impactOf('C', makeGraph(), new Map([['a.def', edges.slice(1, 3)], ['b.def', edges.slice(0, 1)]]));
       expect(result).toHaveLength(3);

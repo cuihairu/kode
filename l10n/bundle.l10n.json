@@ -891,5 +891,14 @@
   "No .def property references {type}.": "No .def property references {type}.",
   "Def properties ({count})": "Def properties ({count})",
   "via {chain}": "via {chain}",
-  ".py access points ({count})": ".py access points ({count})"
+  ".py access points ({count})": ".py access points ({count})",
+  "Field channel lookup is disabled (kbengine.fieldChannels.enabled).": "Field channel lookup is disabled (kbengine.fieldChannels.enabled).",
+  "No field or property match \"{target}\".": "No field or property match \"{target}\".",
+  "Select the field or property to inspect": "Select the field or property to inspect",
+  "Channels of {target}": "Channels of {target}",
+  "Wire encode": "Wire encode",
+  "Wire decode (client)": "Wire decode (client)",
+  "Not persisted": "Not persisted",
+  "Stale impl anchors ({count})": "Stale impl anchors ({count})",
+  "No longer a declared field of {type}": "No longer a declared field of {type}"
 }

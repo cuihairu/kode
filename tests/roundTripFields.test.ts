@@ -21,6 +21,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeRoundTripFieldFindings,
+  clearRoundTripMemoForTests,
+  getRoundTripMemoStats,
   roundTripFieldFindingToItem,
   renderRoundTripEncodeOnlyMessage,
   renderRoundTripDecodeOnlyMessage,
@@ -734,6 +736,21 @@ describe('computeRoundTripFieldFindings 覆盖批5边界', () => {
     const findings = findingsOf(text);
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({ direction: 'decodeOnly', key: 'z' });
+  });
+
+  it('content-identity memo: unchanged text and bindings reuse findings', () => {
+    clearRoundTripMemoForTests();
+    const text = trio(
+      ['return {"x": obj["x"], "y": obj["y"]}'],
+      ['return {"x": dct["x"]}']
+    );
+    const first = findingsOf(text);
+    const before = getRoundTripMemoStats();
+    const second = findingsOf(text);
+    expect(second).toEqual(first);
+    expect(getRoundTripMemoStats().hits).toBe(before.hits + 1);
+    clearRoundTripMemoForTests();
+    expect(getRoundTripMemoStats().entries).toBe(0);
   });
 
   it('get 侧无配对容器跳过:混排不串扰', () => {

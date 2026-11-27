@@ -806,6 +806,18 @@ The flow graph panel supports:
   - The def-edge index updates per file with content identity, so editing one `types.xml` file never reparses def files; def files deleted from disk drop out of the index.
   - Picking a row jumps to `file:line` with `preview: false`.
 
+### `kbengine.showFieldChannels`
+
+- Title: `Show Field Channels (wire encode / wire decode / DB)`
+- Purpose: serialization round-trip index — for one field or def property, list the concrete encode/decode points across the three serialization channels (wire encode, wire decode, DB persistence)
+- Entries: command palette (`kbengine.fieldChannels.enabled`, default on)
+- Behavior:
+  - The target resolves from the cursor word: a def property when the active document is a `.def` file, a declared FIXED_DICT field when it is `types.xml`/`alias.xml`; otherwise a picker over declared fields and custom-typed def properties is shown.
+  - Wire channels: when the field's type has a Python impl (`getDictFromObj`/`createObjFromDict`), the anchors are the impl's literal return keys and input-dict key reads; otherwise the panel cites the engine paths (`datatype.cpp:2592-2642 addToStreamEx`, `datatype.cpp:2673 createFromStreamEx`).
+  - DB channel: persistent def properties are stored as one blob in the entity table in the same stream order (engine cite); non-persistent properties honestly report "not persisted". FIXED_DICT keys persist by default (`<Persistent>false</Persistent>` disables, same rule as the database schema).
+  - Serializer shapes are cached per Python file with content identity: renaming a field in `types.xml` never reparses Python — the renamed field falls back to the engine cite and the old spelling is listed under stale impl anchors.
+  - Picking an impl row jumps to `file:line` with `preview: false`; engine cites are informational.
+
 ### `kbengine.profile.start`
 
 - Title: `Start Runtime Profile`

@@ -34,6 +34,7 @@ import type { CustomTypeInfo } from '../definitionWorkspace';
 import {
   getDirectChildElement,
   getDirectChildElementsByName,
+  getScalarChildValue,
   getElementText,
   getLineNumberAt,
   parseDefDocument,
@@ -49,6 +50,12 @@ export interface DefPropertyEdge {
   declaredType: string | null;
   /** ARRAY element type: <of> direct child of the property or of its <Type> */
   ofRef: string | null;
+  /**
+   * DB persistence of the property (engine loadDefPropertys semantics, same
+   * rule as databaseSchemaCore): default not persisted, only the literal
+   * text "true" (case-insensitive) persists.
+   */
+  persistent: boolean;
   /** <Property> tag line (1-based) */
   line: number;
 }
@@ -116,6 +123,7 @@ export function extractDefPropertyEdges(
       property: name,
       declaredType,
       ofRef,
+      persistent: getScalarChildValue(property, 'Persistent')?.trim().toLowerCase() === 'true',
       line: getLineNumberAt(document, property.tagStart)
     });
   }

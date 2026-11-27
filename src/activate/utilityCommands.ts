@@ -14,6 +14,7 @@ import { l10nText } from '../nlsRuntime';
 // provider uses), so key-family grouping needs no second resolver chain.
 import { registerRwReferencesCommand } from '../rwReferencesCommand';
 import { registerTypeImpactCommand } from '../typeImpactCommand';
+import { registerFieldChannelsCommand } from '../fieldChannelCommand';
 import { CUSTOM_SNIPPETS_RELATIVE_PATH, mergeSnippetEntry, selectionToSnippetBody } from '../backend/snippetGenerator';
 import { DiscoveryKey, DiscoveryLayoutFacts, DiscoveryPromptDeps } from '../workspaceDiscovery';
 import { MergeSnippetResult } from '../backend/snippetGenerator';
@@ -190,6 +191,7 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
   // -> def properties -> .py access points). Uses the same entityMapping
   // runtime access face RUST-138 leaves on the TS side.
   context.subscriptions.push(registerTypeImpactCommand(context, entityMappingManager));
+  context.subscriptions.push(registerFieldChannelsCommand(context));
   context.subscriptions.push(defAnalysis.outputChannel, defAnalysis.diagnostics);
 
   // 自定义代码片段生成器:把选区文本做片段语法转义(\$ 与 \\)并去公共缩进
