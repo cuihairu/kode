@@ -124,9 +124,9 @@ describe('folderColors 装配面(activate/folderColors)', () => {
     expect(folderColorsEnabledFromConfig({ get: () => false })).toBe(false);
   });
 
-  it('门现值:开关+Kode 主题族前缀(装配口径零清单,纯前缀判定)', () => {
+  it('门现值(2026-11-27 用户令:只看 enabled,主题不参与)', () => {
     expect(folderColorsGateNow(true, 'KBEngine (One Dark)')).toBe(true);
-    expect(folderColorsGateNow(true, 'Default Dark+')).toBe(false);
+    expect(folderColorsGateNow(true, 'Default Dark+')).toBe(true);
     expect(folderColorsGateNow(false, 'KBEngine (One Dark)')).toBe(false);
   });
 
@@ -201,7 +201,7 @@ describe('activateFolderColorDecorations(装配到 fake 工作区)', () => {
     expect(decoration).toBeUndefined();
   });
 
-  it('非 Kode 主题(即便开关开)→ 零输出;切走 Kode 主题 → 即时停+门联动回调', async () => {
+  it('主题切换不再影响门(2026-11-27 用户令:单条件);开关翻转仍即时生效', async () => {
     memoryFileSystem.set('/ws/docs/a.md', 'hello');
     const provider = activateFolderColorDecorations({ context, onGateChanged: () => (gateChanged += 1) });
     configurationOverrides.set('workbench', { colorTheme: 'Default Dark+' });
@@ -209,7 +209,7 @@ describe('activateFolderColorDecorations(装配到 fake 工作区)', () => {
       vscode.Uri.file('/ws/docs/a.md'),
       new vscode.CancellationToken()
     );
-    expect(decoration).toBeUndefined();
+    expect(decoration).toBeDefined(); // 非 Kode 主题也出装饰
     workspaceEvents.configurationChanged.fire({
       affectsConfiguration: (key: string) => key === 'workbench.colorTheme' || key === 'workbench'
     });

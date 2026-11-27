@@ -27,17 +27,16 @@ const face = (fsPath: string, rules?: readonly FolderColorRule[]) =>
   resolveFolderColor(fsPath, { ...CTX, ...(rules ? { rules } : {}) });
 
 describe('folderColorRules(目录着色纯核)', () => {
-  describe('双条件门(钉子①:缺一=零装饰输出)', () => {
+  describe('启用门(2026-11-27 用户令改版:只看 enabled,主题不联动)', () => {
     const labels = ['KBEngine (One Dark)', 'KBEngine Theme (Monokai)'];
-    it('开关关 → 不启用(即便 Kode 主题)', () => {
+    it('开关关 → 不启用', () => {
       expect(folderColorsActive(false, 'KBEngine (One Dark)', labels)).toBe(false);
     });
-    it('非 Kode 主题 → 不启用(即便开关开)', () => {
-      expect(folderColorsActive(true, 'Default Dark+', labels)).toBe(false);
-      expect(folderColorsActive(true, 'Dark+ (default)', [])).toBe(false);
-    });
-    it('开关开 + Kode 主题 → 启用', () => {
+    it('开关开 → 启用(任何主题;旧主题条件废止)', () => {
       expect(folderColorsActive(true, 'KBEngine (One Dark)', labels)).toBe(true);
+      expect(folderColorsActive(true, 'Default Dark+', labels)).toBe(true);
+      expect(folderColorsActive(true, 'Dark+ (default)', [])).toBe(true);
+      expect(folderColorsActive(true, '', labels)).toBe(true);
     });
     it('族判定:label 精确命中清单;前缀兜底;非 KBEngine 前缀不兜底', () => {
       expect(isKodeThemeFamily('KBEngine (One Dark)', labels)).toBe(true);

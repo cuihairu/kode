@@ -62,7 +62,7 @@ export interface FolderColorActivationDeps {
   readonly onGateChanged: () => void;
 }
 
-/** 读总开关(默认 true——任务书口径;主题门把关非 Kode 主题用户零感知) */
+/** 读总开关(默认 true;2026-11-27 用户令:enabled 即开,主题不联动) */
 export function folderColorsEnabledFromConfig(config: { get<T>(section: string, defaultValue: T): T }): boolean {
   return config.get<boolean>('folderColors.enabled', true);
 }
@@ -107,7 +107,7 @@ function workspaceRootFor(fsPath: string): string | null {
   return null;
 }
 
-/** 双条件门现值(每次求值,配置/主题切换即时生效) */
+/** 启用门现值(2026-11-27 用户令:只看 enabled;主题不再参与;每次求值即时生效) */
 export function folderColorsGateNow(enabled: boolean, themeLabel: string): boolean {
   return folderColorsActive(enabled, themeLabel, []);
 }

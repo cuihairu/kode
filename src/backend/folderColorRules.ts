@@ -205,7 +205,11 @@ export function isKodeThemeFamily(themeLabel: string, kodeThemeLabels: readonly 
   return kodeThemeLabels.includes(themeLabel);
 }
 
-/** 双条件启用(用户令终版口径):开关开 + Kode 主题族,缺一=零装饰输出 */
+/**
+ * 启用门(2026-11-27 用户令改版):只看 `kbengine.folderColors.enabled`——
+ * 开=启用,与当前主题无关(旧「双条件门:必须 Kode 主题族」废止;themeLabel/
+ * kodeThemeLabels 参数保留维持调用方签名不变,不再参与判定)。
+ */
 export function folderColorsActive(enabled: boolean, themeLabel: string, kodeThemeLabels: readonly string[]): boolean {
-  return enabled && isKodeThemeFamily(themeLabel, kodeThemeLabels);
+  return enabled;
 }
