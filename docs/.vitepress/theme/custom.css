@@ -75,6 +75,9 @@ code {
 .vp-doc td code,
 .vp-doc th code {
   white-space: normal;
-  word-break: break-all;
+  /* 保留完整优先:code 尽量不断行,长列溢出时才软断。
+     break-all 会把配置项 code 的最小宽度压到 1 字符,导致
+     auto 布局下该列被挤成竖排(2026-11-27 表格列宽返工)。 */
+  overflow-wrap: break-word;
 }
 
