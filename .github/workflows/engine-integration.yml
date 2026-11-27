@@ -57,9 +57,11 @@ jobs:
           FANTASY_ROOT_INPUT: ${{ inputs.fantasy_root }}
         timeout-minutes: 10
         run: |
-          # 审计 MED 修正(2026-11-28):无 set -e 时 kbengine 根解析失败而
-          # fantasy 成功→步绿但无引擎根→套件全 skip=空转绿。任一根解析失败
-          # 必须 job 红,不给「绿但什么都没跑」留缝。
+          # Audit MED fix (2026-11-28): without set -e, a kbengine-root
+          # resolution failure with a successful fantasy root left the step
+          # green with no engine root and every suite skipping = an idle
+          # green run. Any root-resolution failure must go job-red; no
+          # seam left for "green but nothing ran".
           set -euo pipefail
           resolve_kbengine_root() {
             if [ -n "$KBENGINE_ROOT_INPUT" ] && [ -d "$KBENGINE_ROOT_INPUT" ]; then

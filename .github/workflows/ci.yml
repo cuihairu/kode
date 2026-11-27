@@ -112,8 +112,10 @@ jobs:
         path: |
           docs/perf/serving-gate-run.txt
           docs/perf/serving-soak-run.txt
-        # 审计 MED 修正(2026-11-28):这两份就是门红时的归因日志,缺位=日志
-        # 生产面自身坏了,warn 会把「无日志可归因」吞成绿——必须 error。
+        # Audit MED fix (2026-11-28): these two files ARE the attribution
+        # logs for a red gate; absence = the log-production face itself is
+        # broken, and warn would swallow no-logs-to-attribute into green —
+        # must be error.
         if-no-files-found: error
         retention-days: 30
 
@@ -166,8 +168,10 @@ jobs:
       with:
         name: kode-vsix-${{ github.sha }}
         path: "kode-*.vsix"
-        # 审计 MED 修正(2026-11-28):缺省=warn,打包步产出零 vsix(改名/
-        # 输出目录漂移)时静默绿——artifact 缺位即门未产出,必须 error。
+        # Audit MED fix (2026-11-28): the default is warn, so a package
+        # step producing zero vsix (rename/output-dir drift) stays silently
+        # green — a missing artifact means the gate never produced one;
+        # must be error.
         if-no-files-found: error
         retention-days: 30
 
@@ -329,7 +333,8 @@ jobs:
         path: |
           docs/perf/v02-baseline-run.txt
           docs/perf/perf-baseline-snapshot.json
-        # 审计 MED 修正(2026-11-28):归因文件缺位须 error,同 serving 面。
+        # Audit MED fix (2026-11-28): missing attribution files must be
+        # error, same as the serving face.
         if-no-files-found: error
         retention-days: 30
 

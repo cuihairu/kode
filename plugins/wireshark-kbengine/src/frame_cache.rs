@@ -1,23 +1,28 @@
-//! 每流帧缓存(todo 2026-11-25 审计 HIGH:per-frame summaries/trees 无界增长,
-//! 长抓包内存爬升):环形窗口上限,窗口满时按首遍到达序淘汰最旧帧。
-//! 窗口内帧的重放遍照常复述;被淘汰帧的重放遍走 dissect 侧既有
-//! 「replay (no first-pass summary)」中性降级臂,不编造、不崩。
-//! `cap == 0` 表示显式不设限(用户自担内存)。
+//! Per-stream frame cache (todo 2026-11-25 audit HIGH: per-frame
+//! summaries/trees grew without bound — long captures climbed memory):
+//! a ring window evicts the oldest frames once the cap is hit. Frames still
+//! inside the window replay as usual; a replay pass over an evicted frame
+//! takes the existing neutral `replay (no first-pass summary)` arm on the
+//! dissect side — never fabricated, never a crash. `cap == 0` means an
+//! explicit unbounded opt-out (memory at the user's own risk).
 
 use std::collections::{BTreeMap, VecDeque};
 
-/// 首选项缺省窗口(帧数/流):约 8k 条摘要 + 字段树,覆盖常态回看窗口,
-/// 上界约为旧无界实现长抓包数小时后的一个零头。
+/// Default per-stream window (frames): roughly 8k summaries + field trees,
+/// covering a normal rewind window at a small fraction of what the old
+/// unbounded implementation accumulated over hours-long captures.
 pub(crate) const DEFAULT_FRAME_CACHE_CAP: usize = 8192;
 
-/// 每 TCP 流的首遍缓存(摘要 + 字段树),带环形淘汰窗口。
-/// `V` 为树条目类型(生产面 `MsgTreeEntry`;测试面用哑型,零协议耦合)。
-pub(crate) struct FrameCache<V: Clone> {
+/// Per-stream first-pass cache (summaries + field trees) with a ring
+/// eviction window. `V` is the tree-entry type (production face
+/// `MsgTreeEntry`; tests use a dummy type, zero protocol coupling).
+pub(crate) struct FrameCache<V: Clone + Default> {
     summaries: BTreeMap<u32, String>,
     trees: BTreeMap<u32, V>,
-    /// 插入序(= 首遍帧序,单调不严格增);队首即最旧。
+    /// Insertion order (= first-pass frame order, monotonically increasing
+    /// but not strictly); front of the queue is the oldest.
     ring: VecDeque<u32>,
-    /// 缓存上限(帧数);0 = 不设限。
+    /// Cache cap (frames); 0 = unbounded.
     cap: usize,
 }
 
@@ -31,16 +36,18 @@ impl<V: Clone + Default> FrameCache<V> {
         }
     }
 
-    /// 重放遍取回:摘要 + 树条目(树缺省 = Default 空表,与旧实现
-    /// `trees.get(&frame).cloned().unwrap_or_default()` 同语义)。
+    /// Replay-pass lookup: summary + tree entries (missing tree = `Default`
+    /// empty, same semantics as the old
+    /// `trees.get(&frame).cloned().unwrap_or_default()`).
     pub(crate) fn get(&self, frame: u32) -> Option<(String, V)> {
         let summary = self.summaries.get(&frame)?.clone();
         let tree = self.trees.get(&frame).cloned().unwrap_or_default();
         Some((summary, tree))
     }
 
-    /// 首遍入库:`entries = None` 为错误复位面(摘要照存,树移除,与既有
-    /// Err 臂语义一致)。同帧重入不重复占环形槽位。
+    /// First-pass insert: `entries = None` is the error-reset face (summary
+    /// is kept, tree removed — same semantics as the existing Err arm).
+    /// Re-inserting the same frame never occupies a second ring slot.
     pub(crate) fn insert(&mut self, frame: u32, summary: String, entries: Option<V>) {
         let fresh = !self.summaries.contains_key(&frame);
         match entries {
@@ -113,10 +120,11 @@ mod tests {
     fn reinsert_does_not_duplicate_ring_slot() {
         let mut c = cache(2);
         c.insert(1, "s1".into(), Some(11));
-        c.insert(1, "s1b".into(), None); // Err 臂重入同帧
+        c.insert(1, "s1b".into(), None); // Err-arm re-entry of the same frame
         c.insert(2, "s2".into(), Some(22));
         c.insert(3, "s3".into(), Some(33));
-        // 环内仍是 1,2,3 各一次 → 容量 2 时淘汰 1,保留 2/3。
+        // Ring still holds 1,2,3 once each → with cap 2 frame 1 is evicted,
+        // 2/3 survive.
         assert_eq!(c.len(), 2);
         assert!(c.get(1).is_none());
         assert!(c.get(2).is_some() && c.get(3).is_some());

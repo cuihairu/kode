@@ -42,7 +42,8 @@ use libwireshark::{
 const DEFAULT_LOGINAPP_PORT: u16 = 20013;
 const DEFAULT_BASEAPP_PORT: u16 = 20015;
 
-/// 首选项:端口对 + 静态消息表来源 + 帧缓存窗口。
+/// Preferences: port pair + static message table source + frame cache
+/// window.
 #[derive(Clone, Debug)]
 struct KbPrefs {
     loginapp_port: u16,
@@ -50,7 +51,8 @@ struct KbPrefs {
     /// `messages_fixed_defaults.xml` 路径;空 = 空表(全部 id 走 unknown 面,
     /// 与 CLI `--defaults` 缺省同口径,不编造默认表)。
     defaults_xml: Option<String>,
-    /// 每流首遍帧缓存窗口(帧数);0 = 不设限(审计前旧语义,用户自担)。
+    /// Per-stream first-pass frame cache window (frames); 0 = unbounded
+    /// (pre-audit semantics, at the user's own risk).
     frame_cache_cap: usize,
 }
 
@@ -174,9 +176,11 @@ struct MsgTreeEntry {
     spans: Vec<ValueSpan>,
 }
 
-/// 每 TCP 流(Wireshark conversation)状态:角色 + 组帧/解码机 + 首遍摘要与
-/// 字段树缓存(重放遍复述;环形窗口上限,超窗淘汰最旧,见 [`FrameCache`])。
-/// 静态表只在开流时并入 Flow::map,不留驻。
+/// Per-TCP-stream (Wireshark conversation) state: role + framing/decode
+/// machine + first-pass summary and field tree cache (restated on replay
+/// passes; ring window with a cap that evicts the oldest first, see
+/// [`FrameCache`]). Static tables merge into Flow::map only at stream open
+/// and never persist.
 struct StreamState {
     role: ComponentRole,
     flow: Flow,

@@ -10,10 +10,13 @@ if (JSON.stringify(actual) !== JSON.stringify(expected)) {
   throw new Error(`Incomplete platform set: expected ${expected.join(', ')}, got ${actual.join(', ')}`);
 }
 const sums = expected.map(name => `${sha256(fs.readFileSync(path.join(directory, name)))}  ${name}`).join('\n') + '\n';
-// Wireshark 插件 zip 面(2026-11-28 审计 MED:校验器此前只认 vsix,插件腿
-// 绿但打包零产物时静默放过)。zip 为条件资产(插件腿红=如实缺位,release
-// 说明注明),故不无条件要求:目录存在即须**恰好**两平台 zip 齐且名对;
-// 远端对拍模式下逐 zip 核 size/digest 与 release 资产一致。
+// Wireshark plugin zip face (2026-11-28 audit MED: the verifier only
+// knew about vsix, so green plugin legs with a packaging step that
+// produced nothing passed silently). The zips are conditional assets
+// (red plugin legs = honestly absent, noted in the release body), so
+// they are not unconditionally required: when the directory exists the
+// set must be exactly the two platform zips with the right names; in
+// remote mode each zip's size/digest must match the release asset.
 const expectedZips = ['wireshark-kbengine-plugin-linux-x64.zip', 'wireshark-kbengine-plugin-windows-x64.zip'].sort();
 const pluginZipDir = path.join(directory, 'plugin-zip');
 if (fs.existsSync(pluginZipDir)) {
