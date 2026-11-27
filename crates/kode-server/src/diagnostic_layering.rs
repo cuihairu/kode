@@ -29,10 +29,14 @@ use crate::diagnostic_pipeline::{
 use crate::hover::HoverEngine;
 use crate::lint::{analyze_def_with_python, Finding, InheritedNames, PythonParityInput};
 
-/// Full table of active lint check codes (lint/rules.rs, 15 rules; new rules synced on both sides --
+/// Full table of active check codes (lint/rules.rs 15 def rules + lint/create_params_calls.rs
+/// 3 .py-face codes from CREATE-05; new codes synced on both sides --
 /// this table is the family tax source for the four-family assembly; the TS mirror tests/kodeDiagnosticLayeringParity
 /// compares on the same table).
 pub const CHECK_CODES: &[&str] = &[
+    "create-params-celldata-not-dict",
+    "create-params-type-suspicious",
+    "create-params-undeclared-attr",
     "def-method-missing-in-python",
     "duplicate-definition",
     "duplicate-type-tag",
@@ -53,14 +57,16 @@ pub const CHECK_CODES: &[&str] = &[
 /// Family -> layer decision table (RUST-142 batch 3a: the four families' real occupants enter the table -- layered by "the check's computational dependency"
 /// not by message semantics: the layer = the working domain / cadence needed to recompute that diagnostic, throttled independently).
 ///
-/// - LocalSyntax: single-def self-contained, cheap, per-keystroke recomputable structure/vocabulary/scope checks
-///   (12 codes: duplicate tag / duplicate definition / keyword name / missing Type / missing Flags / flag and detail vocabularies /
+/// - LocalSyntax: single-document self-contained, cheap, per-keystroke recomputable structure/vocabulary/scope checks
+///   (13 codes: duplicate tag / duplicate definition / keyword name / missing Type / missing Flags / flag and detail vocabularies /
 ///   redundant DetailLevel / ALL_CLIENTS + large payload combination / method and property name collision / engine-restricted names /
 ///   engine-unregistered phantom types -- although the last two codes carry "engine rejects it" semantics, their judgement is a static
-///   vocabulary with zero index and zero engine version, so by computational domain they belong to the local layer);
-/// - Semantic: checks needing workspace resolution (index / types.xml registry / inheritance chain / Python parity)
-///   (3 codes: def-method-missing-in-python / inherited-name-collision /
-///   unknown-type-reference);
+///   vocabulary with zero index and zero engine version, so by computational domain they belong to the local layer; plus the CREATE-05
+///   cellData special-key literal-vs-literal shape, computed inside the .py document itself);
+/// - Semantic: checks needing workspace resolution (index / types.xml registry / inheritance chain / Python parity /
+///   the CREATE-05 params field catalog from the def corpus)
+///   (5 codes: create-params-type-suspicious / create-params-undeclared-attr /
+///   def-method-missing-in-python / inherited-name-collision / unknown-type-reference);
 /// - EngineCompat / RuntimeConfig: no occupants in this table -- per the batch 2 honest boundary, the two seats
 ///   belong to their own lanes (engineCompat = the def md5 compat face, runtimeConfig =
 ///   the configContract family), entering the table when the family migrates.
@@ -68,11 +74,15 @@ pub const CHECK_CODES: &[&str] = &[
 /// Unknown check codes route conservatively to LocalSyntax (no output lost).
 pub fn layer_for_check(check: &str) -> DiagnosticLayer {
     match check {
-        // Needs workspace resolution (types.xml registry / inheritance chain / Python parity).
-        "def-method-missing-in-python" | "inherited-name-collision" | "unknown-type-reference" => {
-            DiagnosticLayer::Semantic
-        }
-        // All other active codes are single-def self-contained static judgements -> the local syntax layer.
+        // Needs workspace resolution (types.xml registry / inheritance chain / Python parity /
+        // CREATE-05 params field catalog from the def corpus).
+        "create-params-type-suspicious"
+        | "create-params-undeclared-attr"
+        | "def-method-missing-in-python"
+        | "inherited-name-collision"
+        | "unknown-type-reference" => DiagnosticLayer::Semantic,
+        // The cellData special key is a self-contained literal-vs-literal judgement (no
+        // catalog), computed inside the .py document itself -> the local syntax layer.
         _ => DiagnosticLayer::LocalSyntax,
     }
 }
@@ -352,16 +362,18 @@ mod tests {
     }
 
     /// Decision-table coverage: the full CHECK_CODES table is routable (batch 3a real occupants: 12 local +
-    /// 3 semantic; the engineCompat/runtimeConfig two seats belong to the def-md5/configContract
-    /// lanes); unknown codes route conservatively to LocalSyntax (no output lost).
+    /// 3 semantic; CREATE-05 adds 2 semantic + 1 local; the engineCompat/runtimeConfig two seats belong to
+    /// the def-md5/configContract lanes); unknown codes route conservatively to LocalSyntax (no output lost).
     #[test]
     fn layer_table_is_total_and_failsafe() {
         assert_eq!(
             CHECK_CODES.len(),
-            15,
-            "税表与 lint 规则数同步(新增规则双侧同表)"
+            18,
+            "税表与在役检查码数同步(新增检查双侧同表)"
         );
         const SEMANTIC_CODES: &[&str] = &[
+            "create-params-type-suspicious",
+            "create-params-undeclared-attr",
             "def-method-missing-in-python",
             "inherited-name-collision",
             "unknown-type-reference",

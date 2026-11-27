@@ -1338,7 +1338,10 @@ pub const DIAGNOSTIC_FLUSH_MAX_DOCS: usize = 8;
 /// (零产出)——诚实边界:C-19 仍走 TS pull 腿,本面不重复发射。
 pub fn flush_diagnostics_pipeline(state: &mut ServerState, deadline: Instant) -> Vec<Outgoing> {
     use crate::diagnostic_pipeline::{DiagnosticLayer, PublishRecord, TaskSpec};
-    use crate::lint::{analyze_def_with_python, Finding, InheritedNames, PythonParityInput};
+    use crate::lint::{
+        analyze_create_params_calls, analyze_def_with_python, Finding, InheritedNames,
+        PythonParityInput,
+    };
 
     let dirty: Vec<(String, i64)> = state
         .diagnostics_dirty
@@ -1379,13 +1382,36 @@ pub fn flush_diagnostics_pipeline(state: &mut ServerState, deadline: Instant) ->
             continue;
         };
         let text = buffer.text().to_string();
-        let Ok(findings) = analyze_def_with_python(
-            &text,
-            &InheritedNames::default(),
-            &known,
-            PythonParityInput::default(),
-        ) else {
-            continue;
+        // Document-kind dispatch: .def documents run the def lint; .py
+        // documents run the CREATE-05 creation-API params face (the params
+        // dict of the creation-API family lands in the engine-internal
+        // createNamespace). Everything else: rootless XML -> empty face,
+        // same discipline as before the dispatch existed.
+        let findings = if key.uri.as_path().ends_with(".py") {
+            // Field catalog from the hover corpus (same root as the .py
+            // document). Entities absent from the corpus stay silent inside
+            // check_params (IndexMissing; never "def does not declare").
+            let hover = state.hover.borrow();
+            let catalog = |entity: &str| {
+                hover
+                    .def_by_name
+                    .get(&(root, entity.to_string()))
+                    .and_then(|paths| paths.iter().find_map(|path| hover.def_file(path)))
+                    .map(|def| {
+                        crate::lint::create_params_calls::EntityFieldSet::from_def(&def.properties)
+                    })
+            };
+            analyze_create_params_calls(&text, &catalog)
+        } else {
+            let Ok(findings) = analyze_def_with_python(
+                &text,
+                &InheritedNames::default(),
+                &known,
+                PythonParityInput::default(),
+            ) else {
+                continue;
+            };
+            findings
         };
         let routed = crate::diagnostic_layering::route_findings(findings);
         for layer in DiagnosticLayer::ALL {

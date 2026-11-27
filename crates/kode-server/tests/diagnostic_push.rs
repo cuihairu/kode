@@ -205,3 +205,132 @@ fn budget_slice_keeps_remainder_dirty() {
         "一次切片只消费条数界,余量回脏集"
     );
 }
+
+// ---- CREATE-05:creation-API params face wired into the flush chain ------
+
+/// Def fixture: a plain BASE property and a cell-domain property (the
+/// catalog the params face folds against).
+const CREATE_PARAMS_DEF: &str = "<root>\n\
+\t<Properties>\n\
+\t\t<hp>\n\
+\t\t\t<Type>UINT32</Type>\n\
+\t\t\t<Flags>BASE</Flags>\n\
+\t\t</hp>\n\
+\t\t<speed>\n\
+\t\t\t<Type>FLOAT</Type>\n\
+\t\t\t<Flags>CELL_PUBLIC</Flags>\n\
+\t\t</speed>\n\
+\t</Properties>\n\
+</root>\n";
+
+/// Python fixture: one creation call with all four non-silent shapes —
+/// type-suspicious (hp), cellData-channel type-suspicious (speed), the
+/// cellData-not-dict error, and an undeclared key (extra).
+const CREATE_PARAMS_PY: &str = "import KBEngine\n\nKBEngine.createEntity(\"Monster\", \
+                                 {\"hp\": \"no\", \"speed\": [], \"cellData\": 7, \"extra\": 1})\n";
+
+const CREATE_PARAMS_PY_URI: &str = "file:///workspace/demo/scripts/entities/spawn.py";
+
+/// didOpen + a hover request on the def (drains the ingest line so the
+/// params face sees the corpus catalog).
+fn open_def_with_corpus_ready(state: &mut ServerState, uri: &str, text: &str) {
+    did_open(state, uri, 1, text);
+    handle_message(
+        state,
+        request(
+            99,
+            "textDocument/hover",
+            json!({
+                "textDocument": {"uri": uri},
+                "position": {"line": 0, "character": 0}
+            }),
+        ),
+    );
+}
+
+/// All publishDiagnostics params from one flush, with their layer names.
+fn publishes(out: &[Outgoing]) -> Vec<(String, serde_json::Value)> {
+    out.iter()
+        .filter_map(|item| match item {
+            Outgoing::Notification(notification)
+                if notification.method == "$/kode/publishDiagnostics" =>
+            {
+                let params = notification.params.clone().expect("有参数");
+                let layer = params["layer"].as_str().expect("layer").to_string();
+                Some((layer, params))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn create_params_face_publishes_through_flush_chain() {
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    let def_uri = "file:///workspace/demo/entities/Monster.def";
+    open_def_with_corpus_ready(&mut state, def_uri, CREATE_PARAMS_DEF);
+
+    did_open(&mut state, CREATE_PARAMS_PY_URI, 1, CREATE_PARAMS_PY);
+    let out = publishes(&flush(&mut state));
+    let by_layer: std::collections::BTreeMap<String, serde_json::Value> = out.into_iter().collect();
+    assert_eq!(by_layer.len(), 2, "localSyntax + semantic 两层各一条通知");
+
+    // localSyntax:the cellData-not-dict error (catalog-free, self-contained).
+    let local = &by_layer["localSyntax"];
+    assert_eq!(local["uri"], json!(CREATE_PARAMS_PY_URI));
+    assert_eq!(local["version"], json!(1));
+    let local_findings = local["findings"].as_array().expect("findings");
+    assert_eq!(local_findings.len(), 1);
+    assert_eq!(
+        local_findings[0]["check"],
+        json!("create-params-celldata-not-dict")
+    );
+    assert_eq!(local_findings[0]["severity"], json!("error"));
+
+    // semantic:catalog-dependent hints (undeclared + two type suspicions,
+    // the cellData-channel one carries the channel in its message).
+    let semantic = &by_layer["semantic"];
+    let semantic_findings = semantic["findings"].as_array().expect("findings");
+    let checks: Vec<&str> = semantic_findings
+        .iter()
+        .map(|f| f["check"].as_str().expect("check"))
+        .collect();
+    assert_eq!(
+        checks,
+        vec![
+            "create-params-type-suspicious",
+            "create-params-type-suspicious",
+            "create-params-undeclared-attr"
+        ]
+    );
+    assert!(semantic_findings[1]["message"]
+        .as_str()
+        .expect("message")
+        .contains("cellData"));
+}
+
+#[test]
+fn create_params_face_stays_silent_without_corpus() {
+    // No def opened: the entity has no catalog → IndexMissing inside
+    // check_params → no catalog-dependent hints published (never "def
+    // does not declare"). The cellData shape check is catalog-free by
+    // design, so the fixture keeps only catalog-dependent keys here.
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    let py =
+        "import KBEngine\nKBEngine.createEntity(\"Monster\", {\"extra\": 1, \"hp\": \"no\"})\n";
+    did_open(&mut state, CREATE_PARAMS_PY_URI, 1, py);
+    assert!(publishes(&flush(&mut state)).is_empty(), "无目录零发射");
+}
+
+#[test]
+fn plain_python_without_creation_calls_publishes_nothing() {
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    let def_uri = "file:///workspace/demo/entities/Monster.def";
+    open_def_with_corpus_ready(&mut state, def_uri, CREATE_PARAMS_DEF);
+    let py = "import KBEngine\n\nprint(\"no creation calls here\")\n";
+    did_open(&mut state, CREATE_PARAMS_PY_URI, 1, py);
+    assert!(publishes(&flush(&mut state)).is_empty(), "无调用点零发射");
+}

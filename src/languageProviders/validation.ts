@@ -159,7 +159,10 @@ export const RUST_LIVE_MERGE_CODES = new Set<string>([
   'inherited-name-collision',
   // C-19:def↔Python 方法一致性(warning,双向定位 related 面在
   // mergeRustDefFindings 转 relatedInformation)。
-  'def-method-missing-in-python'
+  'def-method-missing-in-python',
+  // CREATE-05:creation-API params 里 cellData 特殊键非 dict 字面量
+  // (error;.py 面,validateDocument 的 def 校验不覆盖,无双报面)。
+  'create-params-celldata-not-dict'
 ]);
 
 export const toDiagnosticSeverity = (severity: DefAnalysisFinding['severity']): vscode.DiagnosticSeverity =>

@@ -1206,6 +1206,12 @@ impl HoverEngine {
         &self.entities_files
     }
 
+    /// One parsed def document by corpus path (read-only; the CREATE-05 params
+    /// face reads entity field catalogs through this).
+    pub(crate) fn def_file(&self, path: &str) -> Option<&kode_parser::model::DefFile> {
+        self.def_files.get(path)
+    }
+
     /// The defsRoot probe (the same rules as TS findEntityDefsRootFromFile): walk upward for a directory containing
     /// entities.xml; when the file is inside `entity_defs/`, the root is that subdirectory.
     pub(crate) fn defs_root(&self, path: &str) -> Option<String> {

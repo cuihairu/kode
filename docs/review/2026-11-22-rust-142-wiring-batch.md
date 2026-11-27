@@ -3,6 +3,7 @@
 2026-11-22。kode2 LSP 族 Rust 收编批第 4 条(批 3 生产接线)。承接批 1
 (诊断调度状态机回放核,`diagnostic_pipeline.rs` 四族独立节流)与批 2
 (分级装配决策核 `diagnostic_layering.rs`:15 码税表 → 四层路由 → 合流)。
+> 更新 2026-11-28:CREATE-05 接线批把税表扩到 18 码(.py 面 creation-API params 三码:celldata-not-dict 入 localSyntax;undeclared/type-suspicious 入 semantic),本文其余为批时点记录不改写。
 本批把管线接到**生产** didOpen/didChange/didClose 与 LSP 诊断主面。
 
 ## 交付面

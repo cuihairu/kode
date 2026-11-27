@@ -21,7 +21,10 @@
 //! Rule registration order is stable (registry is a Vec); output is grouped by
 //! rule order and does not depend on HashMap order.
 
+pub mod create_params_calls;
 pub mod rules;
+
+pub use create_params_calls::{analyze_create_params_calls, EntityFieldSet};
 
 use std::collections::{BTreeMap, BTreeSet};
 

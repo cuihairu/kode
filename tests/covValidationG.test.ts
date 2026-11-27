@@ -407,6 +407,11 @@ describe('mergeRustDefFindings 纯函数(覆盖率)', () => {
     expect(out[0].severity).toBe(0); // error → DiagnosticSeverity.Error
     expect(RUST_LIVE_MERGE_CODES.has('phantom-type')).toBe(true);
     expect(RUST_LIVE_MERGE_CODES.has('unknown-type-reference')).toBe(false);
+    // CREATE-05:cellData 非 dict 错误经 push 面入集;.py 的语义提示码
+    // (undeclared/type-suspicious)留在 semantic 层,TS 车道未接不入集。
+    expect(RUST_LIVE_MERGE_CODES.has('create-params-celldata-not-dict')).toBe(true);
+    expect(RUST_LIVE_MERGE_CODES.has('create-params-undeclared-attr')).toBe(false);
+    expect(RUST_LIVE_MERGE_CODES.has('create-params-type-suspicious')).toBe(false);
   });
 
   it('toDiagnosticSeverity:error/warning/info 三档映射', () => {

@@ -1,6 +1,6 @@
 // kode2 诊断分级装配对拍门禁(RUST-142 批 2):TS 侧对拍 Rust golden
 // (crates/kode-server/tests/golden/diagnostic-layering-parity.json)——
-// 家族税表(CHECK_CODES 15 码)/决策表现状(全 localSyntax)/合流序字节
+// 家族税表(CHECK_CODES 18 码)/决策表现状(13 localSyntax + 5 semantic)/合流序字节
 // 序/跨 golden 四层词表一致/计数守恒/production seam(diagnostics.ts 全
 // layer:'local')逐面独立复算。lint findings 本体无法在 TS 复算(lint
 // 规则集是 Rust 生产面),TS 镜像聚焦装配决策面。本文件只读 fixture、
@@ -23,6 +23,9 @@ const PRODUCTION_DIAGNOSTICS_TS = path.join(REPO_ROOT, 'src/activate/diagnostics
 // Rust 侧 crates/kode-server/src/diagnostic_layering.rs CHECK_CODES 镜像
 // (新增 lint 规则须双侧同表;此处顺序 = Rust 源码字面顺序)。
 const RUST_CHECK_CODES = [
+  'create-params-celldata-not-dict',
+  'create-params-type-suspicious',
+  'create-params-undeclared-attr',
   'def-method-missing-in-python',
   'duplicate-definition',
   'duplicate-type-tag',
@@ -43,10 +46,13 @@ const RUST_CHECK_CODES = [
 // 四层名(Rust DiagnosticLayer 全员)+ 合流序字节序重算基准。
 const FOUR_LAYERS = ['localSyntax', 'semantic', 'engineCompat', 'runtimeConfig'] as const;
 
-// 现状决策表(RUST-142 批 3a 真占员:12 本地 + 3 语义;engineCompat/
-// runtimeConfig 两座位归 def-md5/configContract 车道,家族迁移时入表)。
+// 现状决策表(RUST-142 批 3a 真占员:11 本地 def 码 + CREATE-05 的
+// 1 本地 + 2 语义;engineCompat/runtimeConfig 两座位归 def-md5/
+// configContract 车道,家族迁移时入表)。
 // 本字面翻动即联动 Rust 翻表 + golden 重生成,双侧对拍门同时红。
 const TS_SEMANTIC_CODES = new Set([
+  'create-params-type-suspicious',
+  'create-params-undeclared-attr',
   'def-method-missing-in-python',
   'inherited-name-collision',
   'unknown-type-reference'
@@ -90,8 +96,11 @@ const golden = JSON.parse(fs.readFileSync(GOLDEN_PATH, 'utf8')) as GoldenDump;
 describe('kodeDiagnosticLayeringParity', () => {
   it('family table mirrors rust CHECK_CODES and routing decisions', () => {
     // 税表全量镜像:TS 字面 = Rust 源字面(顺序敏感,防漂移)。
-    expect(RUST_CHECK_CODES).toHaveLength(15);
+    expect(RUST_CHECK_CODES).toHaveLength(18);
     expect([...RUST_CHECK_CODES]).toEqual([
+      'create-params-celldata-not-dict',
+      'create-params-type-suspicious',
+      'create-params-undeclared-attr',
       'def-method-missing-in-python',
       'duplicate-definition',
       'duplicate-type-tag',
@@ -110,7 +119,7 @@ describe('kodeDiagnosticLayeringParity', () => {
     ]);
 
     // 决策表对拍:golden 逐码(语料在场码)与 TS 字面分配一致;
-    // TS 字面为全表(15 码)完备,不漏任何在役码。
+    // TS 字面为全表(18 码)完备,不漏任何在役码。
     const firedCodes = Object.keys(golden.layerForCheck);
     expect(firedCodes.length).toBeGreaterThan(0);
     for (const code of firedCodes) {
