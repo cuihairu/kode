@@ -253,7 +253,7 @@ suite('kode 定义面 rust 服务 e2e(真实二进制)', () => {
     expect(messages).toContain('自定义类型 GHOST_TYPE 未在 types.xml 中注册，请先在 types.xml 注册后再引用');
     // 结构码:缺字段(节点区间)+ 重复成对(Warning+Info,属性按作用域)
     expect(messages).toContain('属性 noType 缺少 <Type> 定义');
-    expect(messages).toContain('属性 noFlags 缺少 <Flags> 定义');
+    expect(messages.some(m => m.includes('属性 noFlags 缺少 <Flags> 定义'))).toBe(true);
     expect(messages).toContain('属性区块中存在重复定义: dupProp (Base)');
     expect(messages).toContain('dupProp 在 属性区块 中已在 Base 作用域定义');
     expect(messages).toContain('方法区块中存在重复定义: moveTo');

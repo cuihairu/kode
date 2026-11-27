@@ -645,7 +645,9 @@ const ANCHORS: Array<[string, number, string]> = [
   // lspCompletionToVscode sortText/filterText/snippet/data 面 +12、
   // KBEngineCompletionProvider.resolveCompletionItem +26(均在
   // PythonCompletionProvider 之前)→ 真位重探 1086→1134,出处随 baseline 锁步。
-  ['src/languageProviders/completion.ts', 1187, 'provideCompletionItems('],
+  // 2026-11-27(def-属性补全):completion.ts withDefPropertyCompletions 及其
+  // 装配调用在 provideCompletionItems#2 前插入 +55 行 → 锚 1187→1242(真位重探)。
+  ['src/languageProviders/completion.ts', 1242, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)

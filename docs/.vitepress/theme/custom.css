@@ -61,11 +61,10 @@ code {
 .VPDoc.has-aside .content-container {
   max-width: 1152px !important;
 }
-/* 表格不横向滚出可视区:单元格文字自动换行,长代码串也可断行 */
+/* 表格按内容分配列宽(Type/默认值等窄列不占大空间),长文字自动换行 */
 .vp-doc table {
   display: table;
   width: 100%;
-  table-layout: fixed;
 }
 .vp-doc th,
 .vp-doc td {

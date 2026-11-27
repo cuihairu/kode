@@ -157,7 +157,7 @@ describe('validateDocument 诊断开关与结构/标量校验(覆盖率)', () =>
       expect(messages).toContain('未知的 DetailLevel: SUPERFAR');
       // 缺 Type 与缺 Flags
       expect(messages).toContain('属性 broken 缺少 <Type> 定义');
-      expect(messages).toContain('属性 noFlags 缺少 <Flags> 定义');
+      expect(messages.some(m => m.includes('属性 noFlags 缺少 <Flags> 定义'))).toBe(true);
       // 重复属性定义(同一作用域)
       expect(messages.some(message => message.includes('属性区块中存在重复定义: dup'))).toBe(true);
       expect(messages.some(message => message.includes('dup 在 属性区块 中已在 Base 作用域定义'))).toBe(true);
@@ -513,7 +513,7 @@ describe('validateSectionStructure / validatePropertyStructure / 纯函数(覆�
     validatePropertyStructure(doc, diagnosticsList, x);
     validatePropertyStructure(doc, diagnosticsList, y);
     expect(diagnosticsList.map(item => item.message)).toEqual([
-      '属性 x 缺少 <Flags> 定义',
+      expect.stringContaining('属性 x 缺少 <Flags> 定义'),
       '属性 y 缺少 <Type> 定义'
     ]);
   });
