@@ -208,6 +208,92 @@ fn is_skip_component(path: &Path) -> bool {
     })
 }
 
+/// Stale-dir sweep TTL in hours: `KODE_KB_INDEX_TEMP_TTL_HOURS`,
+/// default 168 (7 days); 0 = explicitly disable the sweep.
+const KB_INDEX_TEMP_TTL_ENV: &str = "KODE_KB_INDEX_TEMP_TTL_HOURS";
+const KB_INDEX_TEMP_TTL_DEFAULT_HOURS: u64 = 168;
+
+fn parse_ttl_hours(raw: Option<&str>) -> u64 {
+    raw.and_then(|v| v.parse().ok())
+        .unwrap_or(KB_INDEX_TEMP_TTL_DEFAULT_HOURS)
+}
+
+/// Sweep-on-open: a `{16hex}-{pid}` dir is stale when its pid is dead and
+/// its mtime predates the TTL cutoff. Live-pid dirs are never swept (/proc
+/// liveness belt — an idle long-lived session must not lose its index to
+/// another process). Returns the removed count; failures are skipped
+/// honestly and never fatal.
+fn sweep_stale_temp_dirs(base: &Path) -> usize {
+    let ttl_hours = parse_ttl_hours(std::env::var(KB_INDEX_TEMP_TTL_ENV).ok().as_deref());
+    if ttl_hours == 0 {
+        return 0;
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    sweep_stale_dirs_at(base, now.saturating_sub(ttl_hours.saturating_mul(3600)))
+}
+
+/// Cutoff-injected variant (dir mtimes cannot be backdated portably, so
+/// tests pass the cutoff directly): remove only when mtime < cutoff AND the
+/// pid is dead.
+fn sweep_stale_dirs_at(base: &Path, cutoff_secs: u64) -> usize {
+    let Ok(entries) = std::fs::read_dir(base) else {
+        return 0;
+    };
+    let mut removed = 0usize;
+    for entry in entries.flatten() {
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let file_name = entry.file_name();
+        let Some(name) = file_name.to_str() else {
+            continue;
+        };
+        let Some(pid) = dir_pid(name) else {
+            continue;
+        };
+        if pid_alive(pid) {
+            continue;
+        }
+        let stale = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() < cutoff_secs)
+            .unwrap_or(false);
+        if stale && std::fs::remove_dir_all(entry.path()).is_ok() {
+            removed += 1;
+        }
+    }
+    removed
+}
+
+/// Trailing `-pid` of a dir name (key = 16 hex chars, the root_key form).
+fn dir_pid(name: &str) -> Option<u32> {
+    let (key, pid) = name.rsplit_once('-')?;
+    let key_is_hex = key.len() == 16 && key.chars().all(|c| c.is_ascii_hexdigit());
+    if key_is_hex {
+        pid.parse().ok()
+    } else {
+        None
+    }
+}
+
+/// Liveness belt: Linux checks /proc (pid 0 has no entry = deterministically
+/// dead); other platforms treat unknown as dead and rely on the time face.
+#[cfg(target_os = "linux")]
+fn pid_alive(pid: u32) -> bool {
+    std::path::Path::new("/proc").join(pid.to_string()).exists()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn pid_alive(_pid: u32) -> bool {
+    false
+}
+
 impl KnowledgeIndex {
     /// Open the index over `root`. Persistent state lives in the system temp
     /// dir (keyed by the canonical root), keeping the user's tree clean; the
@@ -215,6 +301,12 @@ impl KnowledgeIndex {
     /// several MCP servers index the same root concurrently.
     pub fn open(root: &Path) -> Result<KnowledgeIndex, String> {
         let base = std::env::temp_dir().join("kode-mcp-kb-index");
+        // todo 2026-11-25 audit residual: per-pid dirs are never removed at
+        // process exit and accumulate in the system temp dir without bound.
+        // Sweep stale dirs on the open path (production `open` face only;
+        // tests pin their own dirs via `open_at` and are never swept).
+        // Sweep failures are non-fatal — cleanup must never block opening.
+        sweep_stale_temp_dirs(&base);
         let dir = base.join(format!(
             "{}-{}",
             crate::nodes::root_key(root),
@@ -1293,5 +1385,72 @@ mod tests {
             "overflow rows must be dropped at the deterministic cap"
         );
         cleanup(&root, &dir);
+    }
+
+    /// Stale temp-dir sweep (todo 2026-11-25 audit residual): dead pid + old
+    /// mtime is removed; live pid is never removed (idle long session); fresh
+    /// mtime survives; non-dirs and off-key names are untouched. Cutoff is
+    /// injected directly (mtimes cannot be backdated portably), no env
+    /// coupling.
+    #[test]
+    fn stale_temp_dir_sweep_faces() {
+        let base =
+            std::env::temp_dir().join(format!("kode-mcp-kbidx-sweep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).expect("sweep base");
+        let mk = |name: &str| {
+            let p = base.join(name);
+            std::fs::create_dir_all(&p).expect("fixture dir");
+            p
+        };
+        // Dead pid uses 0 (no /proc entry ever = deterministically dead on
+        // Linux).
+        let stale_dead = mk("0123456789abcdef-0");
+        // Live pid = this test process (freshly created dir, mtime=now, a
+        // second belt alongside the liveness face).
+        let live = mk(format!("aaaabbbbccccdddd-{}", std::process::id()).as_str());
+        let junk_file = base.join("not-a-key-123");
+        std::fs::write(&junk_file, b"x").expect("junk file");
+        let odd_name = mk("zzz-0"); // off-key shape (not 16 hex)
+
+        // Cutoff in the "future" (u64::MAX): every existing dir counts as
+        // old → only live pids and off-key names survive; dead-pid dirs go.
+        let removed = sweep_stale_dirs_at(&base, u64::MAX);
+        assert_eq!(removed, 1, "only the stale dead-pid dir is removed");
+        assert!(!stale_dead.exists(), "stale dir swept");
+        assert!(live.exists(), "live pid survives even with old mtime");
+        assert!(odd_name.exists(), "non-key names untouched");
+        assert!(junk_file.exists(), "files untouched");
+
+        // Fresh face: newly created dead-pid dir, cutoff in the past (0) →
+        // its mtime is not old, so it survives.
+        let fresh_dead = mk("fedcba9876543210-0");
+        let removed = sweep_stale_dirs_at(&base, 0);
+        assert_eq!(removed, 0, "cutoff in the past removes nothing fresh");
+        assert!(fresh_dead.exists() && live.exists());
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// TTL parse faces: default 168; 0 = explicit disable; garbage falls
+    /// back to the default.
+    #[test]
+    fn ttl_hours_parse_faces() {
+        assert_eq!(parse_ttl_hours(None), 168);
+        assert_eq!(parse_ttl_hours(Some("0")), 0);
+        assert_eq!(parse_ttl_hours(Some("1")), 1);
+        assert_eq!(parse_ttl_hours(Some("banana")), 168);
+    }
+
+    /// dir_pid faces: 16hex-pid parses; off-key / missing pid / junk pid all
+    /// yield None.
+    #[test]
+    fn dir_pid_faces() {
+        assert_eq!(dir_pid("0123456789abcdef-42"), Some(42));
+        assert_eq!(dir_pid("0123456789abcdef-0"), Some(0));
+        assert_eq!(dir_pid("short-42"), None);
+        assert_eq!(dir_pid("zzzzzzzzzzzzzzzz-42"), None);
+        assert_eq!(dir_pid("0123456789abcdef"), None);
+        assert_eq!(dir_pid("0123456789abcdef-x"), None);
     }
 }
