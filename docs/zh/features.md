@@ -587,6 +587,7 @@
 | `kbengine.infer.sourceWrite` | `"managed"` | 写权限闸 scope（managed/user）— `src/backend/pyreflyInfer.ts` |
 | `kbengine.infer.exclusionsSync` | `true` | .kbengine 隔离（search/watcher 只管自己段；gitignore 条目走**建议**——弹询问、用户点击「加入」才追加，绝不擅自编辑、绝不创建；拒答/关闭同样写一次记忆（每 仓根×托管目录名 一次）——之后再缺失=用户已表态，不再重复弹；`kbengine.managedDir.syncExclusions` 命令是显式绕过入口）— `src/backend/managedDirExclusions.ts`、`src/inferPipeline.ts` |
 | `kbengine.types.aliasDiscovery` | `true` | alias.xml 自定义类型发现 — `src/definitionWorkspace.ts:285` |
+| `kbengine.types.inlineFixedDict` | `true` | def 内联 FIXED_DICT 合成类型(注册表+桩+kbe_runtime.py 伴生层) — `src/definitionWorkspace.ts:537` |
 | `kbengine.runtimeQuery.enabled` | `false` | 运行时查询面板操作面（watcher 观察清单增删与结果订阅流；默认关时面板只剩单次手动查询）— `src/runtimeQueryWebView.ts` |
 | `kbengine.metrics.fileReadDetail` | `false` | 文件读取明细审计（路径+字节数，环形缓冲 256 条，`kbengine.metrics.showSummary` 可查；默认关=只累计计数，开销有界）— `src/backend/fileReadMetrics.ts` |
 | `kbengine.metrics.detailed` | `false` | 语言服务指标逐样本记账(每次操作记一条样本,`kbengine.metrics.showSummary` 可查);关=只累计计数,开销有界 |

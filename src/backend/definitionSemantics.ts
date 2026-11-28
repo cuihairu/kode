@@ -22,6 +22,7 @@ import {
   getWorkspaceRootForDocument
 } from '../definitionWorkspace';
 import { getReferenceTargetName, INTERFACE_WRAPPER_NAMES } from './defRenamer';
+import { isInlineFixedDictProperty } from './inlineFixedDictTypes';
 
 export type DefinitionSemanticCategory = Exclude<DefinitionCategory, 'type'>;
 export type DefinitionMemberSourceKind = 'local' | 'interface' | 'parent' | 'component';
@@ -59,6 +60,8 @@ export interface DefinitionProperty {
   fullPath: string;
   line: number;
   typeName?: string;
+  /** IDX-REL-004: <Type> is FIXED_DICT with a nested inline <Properties> section */
+  inlineFixedDict?: boolean;
   flags?: string;
   /** <Utype> child value (batch 123); null = not declared. Property utype and method utype are two independent spaces */
   utype?: number | null;
@@ -851,6 +854,7 @@ function parseProperties(
       fullPath,
       line: getLineNumberAt(document, propertyNode.tagStart),
       typeName,
+      inlineFixedDict: isInlineFixedDictProperty(propertyNode),
       flags: getScalarChildValue(propertyNode, 'Flags'),
       utype: parseUtypeValue(getScalarChildValue(propertyNode, 'Utype')),
       persistent: parseOptionalBoolean(getScalarChildValue(propertyNode, 'Persistent')),

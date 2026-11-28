@@ -1268,8 +1268,11 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       // 夹具/无 types.xml 环境下类型图解析不到字面 FIXED_DICT 时不漏挂;
       // 文案=behaviorNoteMarkdown 单一事实源(现象/正确姿势/依据双语段)。
       if (resolved.kind === 'def-property' && resolved.typeName) {
-        const shape = getTypeStorageShape(document.fileName, resolved.typeName);
-        if (shape.kind === 'fixedDict' || isFixedDictTypeName(resolved.typeName, [])) {
+        // IDX-REL-004: 内联 FIXED_DICT 的 typeName 是合成名,字面文本在
+        // rawTypeName——形态判定优先字面(两线判定输入不变)
+        const shapeTypeName = resolved.rawTypeName ?? resolved.typeName;
+        const shape = getTypeStorageShape(document.fileName, shapeTypeName);
+        if (shape.kind === 'fixedDict' || isFixedDictTypeName(shapeTypeName, [])) {
           markdown.appendMarkdown(fixedDictBehaviorNoteMarkdown());
         }
         // HOOK-TIMING-001:def 属性注入时序注(.def 默认/params 键先于脚本

@@ -29,6 +29,7 @@ import {
   parseXmlDocument,
   parseCustomTypeStructure
 } from './backend/definitionWorkspaceXml';
+import { extractInlineFixedDictTypes } from './backend/inlineFixedDictTypes';
 // 统一注解解析底座(纯逻辑半边)在 pythonTypeStubs;此处只传注册表,调用
 // 均发生在函数体内,模块环(pythonTypeStubs→definitionWorkspace)为惰性引用。
 import {
@@ -95,6 +96,19 @@ export interface CustomTypeInfo {
   implementedBy?: string;
   properties: CustomTypePropertyInfo[];
   pythonFilePath?: string;
+  /**
+   * def 内联 FIXED_DICT 合成条目标记(IDX-REL-004):名字为 `<实体>_<属性>`
+   * 展平标识符(注册表名即注解文本,与 kbe_types.pyi 发射的 TypedDict 类
+   * 同名),来源 .def 而非 types.xml;声明名撞车的条目在注册表合并面整条
+   * 让位,存根面照常发射该类(TypedDict 无需实现类)。
+   */
+  synthetic?: boolean;
+  /** def 侧序列化元数据(IDX-REL-004):仅合成条目携带;外层 <Property> 的元数据贯通 */
+  flags?: string;
+  /** 引擎 loadDefPropertys 语义:文本恰为 "true" 才持久(默认不持久) */
+  persistent?: boolean;
+  /** 引擎只认文本 "true"(忽略大小写),自闭合/空/其它值一律不算 */
+  identifier?: boolean;
 }
 
 export interface CustomTypeDeclarationInfo {
@@ -482,9 +496,72 @@ export function getCustomTypeInfos(workspaceRoot: string): CustomTypeInfo[] {
     .getConfiguration('kbengine')
     .get<boolean>('types.aliasDiscovery', ALIAS_DISCOVERY_ENABLED_DEFAULT);
   const aliases = aliasDiscoveryEnabled ? getAliasXmlCustomTypeInfos(workspaceRoot) : [];
+  // IDX-REL-004: def 内联 FIXED_DICT 合成条目进统一注册表。合成名是展平
+  // 标识符(`<实体>_<属性>`),与声明名同处一个名字空间——与声明名撞车的
+  // 合成条目如实整条让位(声明类型优先,引擎 addDataType 先注册者胜同规),
+  // dedupe 口径不变。
+  const inline = filterSyntheticNameCollisions(
+    getInlineFixedDictTypeInfos(workspaceRoot),
+    [...types, ...aliases]
+  );
   // KSEM-STRUCT-08:提取层单点去重(addDataType 先见保留口径)——交互快照/
   // 存根发射/契约扫描同源一致;kept 已是名字序。
-  return dedupeCustomTypesByName([...types, ...aliases]).kept;
+  return dedupeCustomTypesByName([...types, ...aliases, ...inline]).kept;
+}
+
+/**
+ * IDX-REL-004: 合成内联 FD 条目与声明名撞车时如实让位(声明类型优先)。
+ * 合成名是展平标识符,与声明名同处一个名字空间;撞车则丢弃合成条目而非
+ * 影子覆盖(引擎 addDataType 先注册者胜同规),def 属性注解如实落回旧口径。
+ */
+export function filterSyntheticNameCollisions(
+  synthetic: readonly CustomTypeInfo[],
+  declared: readonly CustomTypeInfo[]
+): CustomTypeInfo[] {
+  const declaredNames = new Set(declared.map(info => info.name));
+  return synthetic.filter(info => !declaredNames.has(info.name));
+}
+
+/** kbengine.types.inlineFixedDict default (user order 2026-10-21: new features ship a switch) */
+export const INLINE_FIXED_DICT_ENABLED_DEFAULT = true;
+
+/**
+ * def 内联 FIXED_DICT 合成条目(IDX-REL-004):同步枚举 entity_defs 下
+ * *.def 逐文件抽取(parseDefDocument 有内容缓存,重复解析廉价)。枚举
+ * 失败如实返回空表,不猜。kbengine.types.inlineFixedDict=false → 空表
+ * (注册表无合成条目,注解如实落回 Any 旧口径;桩面随之无合成类)。
+ */
+function getInlineFixedDictTypeInfos(workspaceRoot: string): CustomTypeInfo[] {
+  const enabled = vscode.workspace
+    .getConfiguration('kbengine')
+    .get<boolean>('types.inlineFixedDict', INLINE_FIXED_DICT_ENABLED_DEFAULT);
+  if (!enabled) {
+    return [];
+  }
+  const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+  const defsRoot = layout.entityDefsRoot;
+  if (!defsRoot) {
+    return [];
+  }
+  const entries: CustomTypeInfo[] = [];
+  let files: string[] = [];
+  try {
+    files = fs.readdirSync(defsRoot).filter(name => name.toLowerCase().endsWith('.def'));
+  } catch {
+    return [];
+  }
+  for (const name of files) {
+    const filePath = path.join(defsRoot, name);
+    let text: string;
+    try {
+      text = fs.readFileSync(filePath, 'utf8');
+    } catch {
+      continue;
+    }
+    const entity = name.replace(/\.def$/i, '');
+    entries.push(...extractInlineFixedDictTypes(text, entity, filePath));
+  }
+  return entries;
 }
 
 /**
@@ -617,6 +694,20 @@ function getTypeRegistryDependencyPaths(workspaceRoot: string): string[] {
     dependencies.add(layout.typesXmlPath);
   }
   dependencies.add(joinWorkspacePath(workspaceRoot, 'scripts', 'entity_defs', 'alias.xml'));
+  // IDX-REL-004: 内联 FIXED_DICT 合成条目来自 entity_defs/*.def → def 文件
+  // 也是注册表依赖(watcher 的 .def 路由臂据此精确作废本快照)。
+  const defsRoot = layout.entityDefsRoot;
+  if (defsRoot) {
+    try {
+      for (const name of fs.readdirSync(defsRoot)) {
+        if (name.toLowerCase().endsWith('.def')) {
+          dependencies.add(path.join(defsRoot, name));
+        }
+      }
+    } catch {
+      // 枚举失败与提取面同口径:依赖集如实缺,不猜
+    }
+  }
   return [...dependencies];
 }
 

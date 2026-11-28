@@ -338,6 +338,7 @@ guiconsole 协议链（machined UDP 发现 + 直连各组件 TCP）：日志 tai
 | `kbengine.python.builtinTypeInlayHints` | boolean | `true` | 实体脚本 `self.<内建属性>` 访问处行内 `: <类型>` 提示(与悬停同一命中底座,默认开);受总闸 `kbengine.entity.builtinProperties` 与本键双控,任一关闭都不渲染内建属性 inlay |
 | `kbengine.python.proxyInternalAttrHints` | boolean | `true` | 实体脚本 `self.__ACCOUNT_NAME__` / `self.__ACCOUNT_PASSWORD__` 访问处渲染「内部属性 · Proxy」淡色小字(名字表 entitydef/common.h:142-143,baseapp 在 baseapp.cpp:4241-4246 注入);项目桩副本 `KBEngine/Proxy.pyi` 在盘时提示带导航(Ctrl+点击直达声明行);声明行现场扫描项目副本(副本可魔改,钉死行号必漂) |
 | `kbengine.types.aliasDiscovery` | boolean | `true` | 从 `scripts/entity_defs/alias.xml` 发现自定义类型并入类型表(默认开);关掉回落只认 `types.xml` |
+| `kbengine.types.inlineFixedDict` | boolean | `true` | def 属性内联 `FIXED_DICT` 直写(`<Type>FIXED_DICT<Properties>`)注册为合成类型进统一注册表(展平名 `<实体>_<属性>`):`self.<属性>` 的 hover/inlay 注解、成员钻取、字典键面诊断与 `kbe_types.pyi`/`kbe_runtime.py` 发射全部打通;关闭回落旧口径(注解如实落 `Any`,桩面无合成类) |
 
 `kbengine.python.stubDir` 留空(默认)时目录是 kode 自管的 `.kbengine/stubs`:内容一致零写、陈旧(索引更新后)自动重写、手改不保留,建议在 `.gitignore` 里忽略。**配了目录则目录归用户所有**:kode 只扫描不覆盖——目录里已有任何 `.pyi` 一律当用户资产不碰,没有 `.pyi` 才生成一份;目录读不到(不存在/无权限)如实提示,不盲写。
 

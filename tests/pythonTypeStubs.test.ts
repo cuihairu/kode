@@ -1,8 +1,13 @@
+import { execFileSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   PYTHON_BUILTIN_TYPE_ANNOTATIONS,
   PYTHON_TYPE_STUB_FALLBACK,
   PYTHON_TYPE_STUB_FILE_NAME,
+  buildKbeRuntimeModule,
   buildPythonTypeStubContent,
   buildPythonTypeStubPlan,
   exportPythonTypeStubs,
@@ -878,9 +883,12 @@ describe('exportPythonTypeStubs(装配层)', () => {
 
     expect(written).toEqual(['ws']);
     expect(mkdirs).toEqual(['/ws/.kbengine/stubs/scripts/entity_defs']);
-    expect(writes).toHaveLength(1);
+    // IDX-REL-004: kbe_runtime.py companion rides along with FD class modules
+    expect(writes).toHaveLength(2);
     expect(writes[0].path).toBe('/ws/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi');
     expect(writes[0].content).toBe(buildPythonTypeStubPlan(SAMPLE_TYPES()).content);
+    expect(writes[1].path).toBe('/ws/.kbengine/stubs/scripts/entity_defs/kbe_runtime.py');
+    expect(writes[1].content).toContain('FIXED_DICT_FIELDS');
     expect(messages.info[0]).toContain('ws');
     expect(messages.info[0]).toContain('kbe_types.pyi');
   });
@@ -902,10 +910,13 @@ describe('exportPythonTypeStubs(装配层)', () => {
     const written = await exportPythonTypeStubs(deps, { listCustomTypes });
 
     expect(written).toEqual(['ws']);
-    expect(writes).toHaveLength(2);
+    // IDX-REL-004: each module with FD entries also emits its kbe_runtime.py
+    expect(writes).toHaveLength(4);
     const byPath = new Map(writes.map(write => [write.path, write.content]));
     expect([...byPath.keys()].sort()).toEqual([
+      '/ws/.kbengine/stubs/scripts/cellapp/entity_defs/kbe_runtime.py',
       '/ws/.kbengine/stubs/scripts/cellapp/entity_defs/kbe_types.pyi',
+      '/ws/.kbengine/stubs/scripts/entity_defs/kbe_runtime.py',
       '/ws/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi'
     ]);
     expect(byPath.get('/ws/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi')).toBe(
@@ -933,7 +944,7 @@ describe('exportPythonTypeStubs(装配层)', () => {
     const written = await exportPythonTypeStubs(deps, { listCustomTypes: () => [...SAMPLE_TYPES(), ...aliases] });
 
     expect(written).toEqual(['ws']);
-    expect(writes).toHaveLength(1);
+    expect(writes).toHaveLength(2);
     expect(writes[0]?.path).toBe('/ws/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi');
     // 一份文件里两源齐在,跨文件引用解析到底
     expect(writes[0]?.content).toContain('class AVATAR_INFO(TypedDict):');
@@ -956,7 +967,9 @@ describe('exportPythonTypeStubs(装配层)', () => {
 
     await exportPythonTypeStubs(deps, { listCustomTypes: () => [...SAMPLE_TYPES(), ...remote] });
 
-    expect(writes).toHaveLength(2);
+    // IDX-REL-004: runtime companion only for modules with FD entries —
+    // cellapp holds an ARRAY alias only, so only entity_defs gets one
+    expect(writes).toHaveLength(3);
     const cellapp = writes.find(write => write.path.endsWith('cellapp/entity_defs/kbe_types.pyi'))?.content ?? '';
     expect(cellapp).toContain('REMOTE_LIST = FixedArray[AVATAR_INFO]');
     expect(cellapp).toContain('from scripts.entity_defs.kbe_types import AVATAR_INFO');
@@ -967,30 +980,35 @@ describe('exportPythonTypeStubs(装配层)', () => {
   it('内容一致时零写零提示;陈旧时重写;读不到按陈旧重写', async () => {
     stubWorkspace.workspaceFolders = [folder('/ws')];
     const target = '/ws/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi';
+    const runtimeTarget = '/ws/.kbengine/stubs/scripts/entity_defs/kbe_runtime.py';
     const content = buildPythonTypeStubPlan(SAMPLE_TYPES()).content ?? '';
+    const runtimeContent = buildKbeRuntimeModule(SAMPLE_TYPES()) ?? '';
 
+    // IDX-REL-004: 零写臂要求 .pyi 与 kbe_runtime.py 伴生件都内容一致
     const unchanged = makeDeps({
-      existing: [target],
-      initial: { [target]: content }
+      existing: [target, runtimeTarget],
+      initial: { [target]: content, [runtimeTarget]: runtimeContent }
     });
     await exportPythonTypeStubs(unchanged.deps, { listCustomTypes: () => SAMPLE_TYPES() });
     expect(unchanged.writes).toHaveLength(0);
     expect(messages.info).toHaveLength(0);
 
+    // 陈旧 .pyi + 缺失伴生件 → 两写
     const stale = makeDeps({
       existing: [target],
       initial: { [target]: '# 旧版本' }
     });
     await exportPythonTypeStubs(stale.deps, { listCustomTypes: () => SAMPLE_TYPES() });
-    expect(stale.writes).toHaveLength(1);
+    expect(stale.writes).toHaveLength(2);
     expect(stale.writes[0].content).toBe(content);
+    expect(stale.writes[1].content).toBe(runtimeContent);
 
     const unreadable = makeDeps({
-      existing: [target],
+      existing: [target, runtimeTarget],
       readFails: true
     });
     await exportPythonTypeStubs(unreadable.deps, { listCustomTypes: () => SAMPLE_TYPES() });
-    expect(unreadable.writes).toHaveLength(1);
+    expect(unreadable.writes).toHaveLength(2);
     stubWorkspace.workspaceFolders = [];
   });
 
@@ -1012,13 +1030,16 @@ describe('exportPythonTypeStubs(装配层)', () => {
 
     await exportPythonTypeStubs(owned.deps, { listCustomTypes: () => SAMPLE_TYPES() });
 
-    expect(owned.writes).toHaveLength(0);
+    // .pyi 是用户资产不碰;kbe_runtime.py 伴生件不在(没有才生成契约)照常生成
+    expect(owned.writes).toHaveLength(1);
+    expect(owned.writes[0].path).toBe('/user-stubs/scripts/entity_defs/kbe_runtime.py');
     expect(messages.info.some(message => message.includes('按用户资产不覆盖'))).toBe(true);
 
     const free = makeDeps();
     await exportPythonTypeStubs(free.deps, { listCustomTypes: () => SAMPLE_TYPES() });
-    expect(free.writes).toHaveLength(1);
+    expect(free.writes).toHaveLength(2);
     expect(free.writes[0].path).toBe('/user-stubs/scripts/entity_defs/kbe_types.pyi');
+    expect(free.writes[1].path).toBe('/user-stubs/scripts/entity_defs/kbe_runtime.py');
     stubWorkspace.workspaceFolders = [];
   });
 
@@ -1051,8 +1072,9 @@ describe('exportPythonTypeStubs(装配层)', () => {
     const written = await exportPythonTypeStubs(deps, { listCustomTypes: () => SAMPLE_TYPES() });
 
     expect(written).toEqual(['good']);
-    expect(writes).toHaveLength(1);
+    expect(writes).toHaveLength(2);
     expect(writes[0].path).toBe('/good/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi');
+    expect(writes[1].path).toBe('/good/.kbengine/stubs/scripts/entity_defs/kbe_runtime.py');
     stubWorkspace.workspaceFolders = [];
   });
 
@@ -1068,10 +1090,11 @@ describe('exportPythonTypeStubs(装配层)', () => {
     const written = await exportPythonTypeStubs(deps, { listCustomTypes: () => [...SAMPLE_TYPES(), ...cyclic] });
 
     expect(written).toEqual(['ws']);
-    // 只落正常模块的分件,成环模块整份跳过不写文件
-    expect(writes).toHaveLength(1);
+    // 只落正常模块的分件(kbe_runtime.py 伴生),成环模块整份跳过不写文件
+    expect(writes).toHaveLength(2);
     expect(writes[0].path).toBe('/ws/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi');
     expect(writes[0].content).toContain('class AVATAR_INFO(TypedDict):');
+    expect(writes[1].path).toBe('/ws/.kbengine/stubs/scripts/entity_defs/kbe_runtime.py');
     stubWorkspace.workspaceFolders = [];
   });
 
@@ -1101,7 +1124,7 @@ describe('exportPythonTypeStubs(装配层)', () => {
 
     const writing = makeDeps();
     await exportPythonTypeStubs(writing.deps, { silent: true, listCustomTypes: () => SAMPLE_TYPES() });
-    expect(writing.writes).toHaveLength(1);
+    expect(writing.writes).toHaveLength(2);
     expect(messages.info).toHaveLength(0);
     stubWorkspace.workspaceFolders = [];
   });
@@ -1139,16 +1162,17 @@ describe('setupTypeStubRegeneration(types.xml watcher 自动重生成,def-pyi-st
       () => SAMPLE_TYPES()
     );
 
+    // IDX-REL-004: FD 模块一次导出落 .pyi + kbe_runtime.py 伴生件
     watcher.fireChange({ fsPath: '/ws/scripts/entity_defs/types.xml' } as never);
-    expect(writes).toHaveLength(1);
+    expect(writes).toHaveLength(2);
 
     // 内容一致:重复触发零写,零提示
     watcher.fireCreate({ fsPath: '/ws/scripts/entity_defs/types.xml' } as never);
-    expect(writes).toHaveLength(1);
+    expect(writes).toHaveLength(2);
     expect(messages.info).toHaveLength(0);
 
     watcher.fireDelete({ fsPath: '/ws/scripts/entity_defs/types.xml' } as never);
-    expect(writes).toHaveLength(1);
+    expect(writes).toHaveLength(2);
     stubWorkspace.workspaceFolders = [];
   });
 
@@ -1161,11 +1185,11 @@ describe('setupTypeStubRegeneration(types.xml watcher 自动重生成,def-pyi-st
     const watcher = setupTypeStubRegeneration(context as never, deps, () => types);
 
     watcher.fireChange({ fsPath: '/ws/scripts/entity_defs/types.xml' } as never);
-    expect(writes).toHaveLength(1);
+    expect(writes).toHaveLength(2);
 
     types = [];
     watcher.fireDelete({ fsPath: '/ws/scripts/entity_defs/types.xml' } as never);
-    expect(writes).toHaveLength(1);
+    expect(writes).toHaveLength(2);
     expect(messages.info).toHaveLength(0);
     stubWorkspace.workspaceFolders = [];
   });
@@ -1177,6 +1201,92 @@ describe('setupTypeStubRegeneration(types.xml watcher 自动重生成,def-pyi-st
     const watcher = setupTypeStubRegeneration(context as never, makeDeps().deps, () => SAMPLE_TYPES());
 
     expect(context.subscriptions).toContain(watcher);
+    stubWorkspace.workspaceFolders = [];
+  });
+});
+
+describe('buildKbeRuntimeModule(IDX-REL-004 kbe_runtime.py 伴生层)', () => {
+  it('emits declaration order fields and literal-safe defaults; null without FD', () => {
+    const fd = makeType({
+      name: 'AVATAR_INFO',
+      aliasType: 'FIXED_DICT',
+      rawValue: 'FIXED_DICT',
+      properties: [
+        { name: 'label', typeName: 'STRING', defaultValue: '"hero"' },
+        { name: 'size', typeName: 'UINT16', defaultValue: '4' },
+        { name: 'origin', typeName: 'VECTOR3', defaultValue: 'VECTOR3(0, 0, 0)' }
+      ]
+    });
+    const content = buildKbeRuntimeModule([fd]);
+    expect(content).not.toBeNull();
+    // declaration order preserved; composite engine default skipped honestly
+    expect(content).toContain("'AVATAR_INFO': ('label', 'size', 'origin'),");
+    expect(content).toContain("'AVATAR_INFO': {'label': 'hero', 'size': 4},");
+    expect(content).toContain('def repr_fixed_dict');
+    expect(content).toContain('def ensure_fixed_dict');
+    expect(buildKbeRuntimeModule([makeType({ name: 'PLAIN', aliasType: 'UINT8', rawValue: 'UINT8' })])).toBeNull();
+  });
+
+  it('acceptance: generated repr_fixed_dict prints type name in declared field order', () => {
+    let python = 'python3';
+    try {
+      execFileSync('python3', ['--version'], { stdio: 'ignore' });
+    } catch {
+      try {
+        execFileSync('python', ['--version'], { stdio: 'ignore' });
+        python = 'python';
+      } catch {
+        // no interpreter on this runner: static shape is pinned above
+        return;
+      }
+    }
+    const fd = makeType({
+      name: 'AVATAR_INFO',
+      aliasType: 'FIXED_DICT',
+      rawValue: 'FIXED_DICT',
+      properties: [
+        { name: 'size', typeName: 'UINT16', defaultValue: '4' },
+        { name: 'label', typeName: 'STRING' }
+      ]
+    });
+    const content = buildKbeRuntimeModule([fd])!;
+    const driver = [
+      content,
+      "value = {'label': 'x'}",
+      "print(repr_fixed_dict(value, 'AVATAR_INFO'))",
+      "filled = ensure_fixed_dict('AVATAR_INFO', {'label': 'x'})",
+      "print(filled['size'])"
+    ].join('\n');
+    const file = path.join(os.tmpdir(), `kbe_runtime_check_${process.pid}.py`);
+    fs.writeFileSync(file, driver);
+    try {
+      const out = execFileSync(python, [file], { encoding: 'utf8' });
+      const lines = out.trim().split('\n');
+      // type name first, then declared field order (size before label), missing marked
+      expect(lines[0]).toBe("AVATAR_INFO(size=<missing>, label='x')");
+      expect(lines[1]).toBe('4');
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+  });
+
+  it('def events regenerate stubs (IDX-REL-004 content source arm)', () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const context = { subscriptions: [] as Array<{ dispose(): void }> };
+    const writes: Array<{ path: string; content: string }> = [];
+    const deps = {
+      exists: (): boolean => false,
+      readFile: (): string => '',
+      writeFile: (candidate: string, content: string): void => {
+        writes.push({ path: candidate, content });
+      },
+      mkdir: (): void => undefined
+    };
+    const handle = setupTypeStubRegeneration(context as never, deps, () => SAMPLE_TYPES());
+    handle.fireChange({ fsPath: '/ws/scripts/entity_defs/Avatar.def' } as never);
+    expect(writes.some(write => write.path.endsWith('kbe_types.pyi'))).toBe(true);
+    expect(writes.some(write => write.path.endsWith('kbe_runtime.py'))).toBe(true);
+    expect(context.subscriptions).toContain(handle);
     stubWorkspace.workspaceFolders = [];
   });
 });

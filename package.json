@@ -2248,6 +2248,11 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "%kbengine.config.types.aliasDiscovery.description%"
+          },
+          "kbengine.types.inlineFixedDict": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.types.inlineFixedDict.description%"
           }
         }
       },

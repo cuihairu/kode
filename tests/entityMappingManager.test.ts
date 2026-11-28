@@ -68,6 +68,20 @@ beforeAll(async () => {
     '      <Flags>BASE</Flags>',
     '      <Persistent>true</Persistent>',
     '    </hp>',
+    '    <pouch>',
+    '      <Type>',
+    '        FIXED_DICT',
+    '        <Properties>',
+    '          <slot_list>',
+    '            <Type>',
+    '              ARRAY',
+    '              <of>SKILL_SLOT</of>',
+    '            </Type>',
+    '          </slot_list>',
+    '        </Properties>',
+    '      </Type>',
+    '      <Flags>BASE</Flags>',
+    '    </pouch>',
     '  </Properties>',
     '  <Interfaces>',
     '    <interface>MoveIface</interface>',
@@ -388,6 +402,46 @@ describe('resolvePropertyDefinitionInfo(带类型/可见域/持久化,批135)', 
   it('returns null when nothing matches', async () => {
     expect(await managerRef().resolvePropertyDefinitionInfo(heroPython(), 'nope')).toBeNull();
     expect(await managerRef().resolvePropertyDefinitionInfo('/nowhere/Foo.py', 'hp')).toBeNull();
+  });
+
+  it('resolves the inline FIXED_DICT annotation chain end to end', async () => {
+    const { resolveSelfPropertyAnnotation } = await import('../src/backend/selfPropertyTypeInference');
+    const { resolveEntityAnnotationTypeWithReason, resolveEntityFixedDictMember } =
+      await import('../src/definitionWorkspace');
+    const root = mappingRoot();
+    const lines = [
+      'class Hero(object):',
+      '    def onGrab(self):',
+      '        item = self.pouch.slot_list'
+    ];
+    const selfAccess = { rootSymbol: 'pouch', currentSymbol: 'pouch', fullPath: 'pouch' };
+    const resolved = await resolveSelfPropertyAnnotation(
+      lines, 2, 'pouch', selfAccess,
+      async (fullPath: string, rootSymbol: string) =>
+        await managerRef().resolvePropertyDefinitionInfo(heroPython(), fullPath, rootSymbol),
+      (raw: string) => {
+        const withReason = resolveEntityAnnotationTypeWithReason(root, raw);
+        return { annotation: withReason.annotation, reason: withReason.reason };
+      }
+    );
+    // IDX-REL-004: substituted registry name hits the synthetic entry; the
+    // FD member drill resolves ARRAY-of-unknown through the same registry
+    expect(resolved?.annotation).toBe('Hero_pouch');
+    expect(resolved?.typeName).toBe('Hero_pouch');
+    expect(resolved?.rawTypeName).toBe('FIXED_DICT');
+    expect(resolveEntityFixedDictMember(root, 'Hero_pouch', 'slot_list', false))
+      .toBe('FixedArray[Any]');
+  });
+
+  it('carries the synthetic registry name for inline FIXED_DICT properties', async () => {
+    const info = await managerRef().resolvePropertyDefinitionInfo(heroPython(), 'pouch');
+
+    // IDX-REL-004: annotation-chain key = flattened synthetic name; the raw
+    // def <Type> literal stays available for shape decisions
+    expect(info?.identity.symbolName).toBe('pouch');
+    expect(info?.typeName).toBe('Hero_pouch');
+    expect(info?.rawTypeName).toBe('FIXED_DICT');
+    expect(info?.domains).toEqual(['base']);
   });
 });
 

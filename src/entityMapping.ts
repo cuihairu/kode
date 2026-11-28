@@ -28,6 +28,7 @@ import {
   getScanRootForFile
 } from './scanRoots';
 import { DefMethodSection } from './backend/defParser';
+import { inlineFixedDictSyntheticName } from './backend/inlineFixedDictTypes';
 import { resolvePythonBaseChainMethodOutcome, findMethodLocationsInPythonBaseChain } from './backend/pythonBaseChain';
 import type { DefMethodGap, PythonMethodNotInDefGap } from './backend/defMethodConsistency';
 import { getHookByName } from './hooks';
@@ -120,8 +121,14 @@ export type DefLutConventionResolver = (
  * 同一份旗标真值,不另写一份映射。
  */
 export interface PropertyDefinitionInfo extends EntityPropertyDefinitionLocation {
-  /** <Type> 直文本(别名未展开,与 def 声明行同源) */
+  /**
+   * <Type> 直文本(别名未展开,与 def 声明行同源)。IDX-REL-004:内联
+   * FIXED_DICT 属性此处改载合成类型名 `<实体>.<属性>`(注册表键,注解链/
+   * 成员钻取按名命中合成条目);def 文件里的字面文本另见 rawTypeName。
+   */
   typeName?: string;
+  /** IDX-REL-004: 内联 FIXED_DICT 属性的 def <Type> 字面文本('FIXED_DICT') */
+  rawTypeName?: string;
   /** <Default> 直文本(GEN-DEF-1c):PYTHON 族属性据此精化字面量类型 */
   defaultValue?: string;
   /** Flags 位集推导的引擎三域位,定序 base → cell → client */
@@ -1117,7 +1124,12 @@ export class EntityMappingManager {
           propertyPath: property.fullPath,
           componentSlotName
         },
-        typeName: property.typeName,
+        // IDX-REL-004: 内联 FIXED_DICT 的注册表键是合成名 `<实体>.<属性>`,
+        // 注解链/成员钻取/补全按名命中合成条目;字面文本保底在 rawTypeName
+        typeName: property.inlineFixedDict
+          ? inlineFixedDictSyntheticName(property.owner.name, property.name)
+          : property.typeName,
+        rawTypeName: property.inlineFixedDict ? property.typeName : undefined,
         defaultValue: property.defaultValue,
         domains: propertyFlagDomainList(property.flags),
         // <Persistent> 缺省视作非持久(与 databaseSchema 的 isTruePersistent 口径一致)
@@ -1274,6 +1286,10 @@ export class EntityMappingManager {
     }
     if (event.fsPath.toLowerCase().endsWith('.def')) {
       this.handleDefFileChanged(event.fsPath, event.kind);
+      // IDX-REL-004: 内联 FIXED_DICT 合成条目来自 def → 类型注册表快照同样
+      // 依赖 def 文件,定向作废(notifySemanticFilesChanged 按依赖集裁断,
+      // 未依赖该 def 的快照不动)
+      getSemanticIndex().notifySemanticFilesChanged([event.fsPath]);
       return;
     }
     this.handlePythonFileChanged(event.fsPath);

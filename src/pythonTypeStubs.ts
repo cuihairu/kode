@@ -101,6 +101,8 @@ export interface PythonTypeStubClassEntry {
   sourceFile?: string;
   /** 属性名 → 属性行或内联 <Type> 行(1 起) */
   propertySourceLines?: Record<string, number | null>;
+  /** IDX-REL-004: 内联 FIXED_DICT 合成条目标记(注册表名即展平标识符) */
+  synthetic?: boolean;
 }
 
 export interface PythonTypeStubAliasEntry {
@@ -204,9 +206,15 @@ export function groupCustomTypesByModule(
 ): Map<string, CustomTypeInfo[]> {
   const groups = new Map<string, CustomTypeInfo[]>();
   for (const info of customTypes) {
-    const key = workspaceRoot
-      ? typeStubMirrorRelativeDir(info.filePath, workspaceRoot) ?? ''
-      : '';
+    // IDX-REL-004: inline FIXED_DICT synthetic entries always join the root
+    // kbe_types module — their names are flat identifiers in one type space,
+    // so mirroring the .def directory would fragment one entity's types
+    // across per-directory modules for no consumer benefit.
+    const key = info.synthetic
+      ? ''
+      : workspaceRoot
+        ? typeStubMirrorRelativeDir(info.filePath, workspaceRoot) ?? ''
+        : '';
     const group = groups.get(key);
     if (group) {
       group.push(info);
@@ -272,7 +280,9 @@ function resolveTypeName(typeName: string, context: ResolutionContext): string {
   const info = context.byName.get(trimmed);
   if (info !== undefined) {
     if (info.aliasType === FIXED_DICT_TYPE_NAME) {
-      // 类定义在本文件先于别名发射,引用类名不算悬挂
+      // 类定义在本文件先于别名发射,引用类名不算悬挂。IDX-REL-004: 合成
+      // 内联 FD 的注册表名本身就是合法标识符(展平形,注册表合并面已挡
+      // 声明名撞车),注解直接引用,无映射层。
       return trimmed;
     }
     // 别名(含 ARRAY)统一走 resolveAliasInfo:环检测与级联跳过都在那层
@@ -444,8 +454,9 @@ export function resolveAnnotationTypeWithReason(
  * 先见保留,types.xml 先注册 alias.xml 后到;旧口径按名序 Map 后见覆盖,同名
  * 两源时与存根 plan 各取一条,桩与编辑器不一致;poisoned/external 随次解析独立) */
 function buildResolutionContext(customTypes: readonly CustomTypeInfo[]): ResolutionContext {
+  const kept = dedupeCustomTypesByName(customTypes).kept;
   return {
-    byName: new Map(dedupeCustomTypesByName(customTypes).kept.map(info => [info.name, info])),
+    byName: new Map(kept.map(info => [info.name, info])),
     resolving: new Set(),
     poisoned: new Map(),
     referencedExternals: new Map()
@@ -542,6 +553,9 @@ export function buildPythonTypeStubPlan(
   // 同名去重(KSEM-STRUCT-08 统一口径,引擎 datatypes.cpp addDataType 对重复
   // 名报错并拒注册):types.xml 先注册、alias.xml 后到,同名后到整条作废;
   // 两类之内先见优先。与注册表提取/交互解析链共用 dedupeCustomTypesByName。
+  // IDX-REL-004: def 内联 FIXED_DICT 合成条目一并入计划——注册表名已由
+  // 合并面展平成合法标识符并挡过声明名撞车,这里直接发射,注解面同名
+  // 引用,无第二套命名。
   const { kept: keptList, duplicates } = dedupeCustomTypesByName(customTypes);
   const kept = new Map<string, CustomTypeInfo>(keptList.map(info => [info.name, info]));
   const duplicateSkipped: PythonTypeStubSkipped[] = duplicates.map(info => {
@@ -590,6 +604,7 @@ export function buildPythonTypeStubPlan(
     classes.push({
       kind: 'class',
       name: info.name,
+      synthetic: info.synthetic,
       properties: info.properties.map(property => ({
         name: property.name,
         annotation: propertyAnnotation(property, context)
@@ -724,6 +739,9 @@ function renderPythonTypeStub(
     lines.push('', '');
     if (entry.kind === 'class') {
       lines.push(`# source: ${entry.sourceFile ?? 'types.xml'}:${entry.sourceLine ?? 'unknown'}`);
+      if (entry.synthetic) {
+        lines.push(`# inline FIXED_DICT (synthetic, declared inline in a .def)`);
+      }
       lines.push(`class ${entry.name}(TypedDict):`);
       recordEntryLine?.(entry.name, lines.length - 1);
       if (entry.properties.length === 0) {
@@ -748,6 +766,194 @@ function renderPythonTypeStub(
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Runtime companion module file name, written beside each kbe_types.pyi */
+export const KBE_RUNTIME_FILE_NAME = 'kbe_runtime.py';
+
+/**
+ * IDX-REL-004: kbe_runtime.py debug-assist layer generated from the FIXED_DICT
+ * entries of one module group (declared types + inline FIXED_DICT synthetic
+ * entries alike — both carry declaration-ordered properties):
+ * - FIXED_DICT_FIELDS: type -> field tuple in declaration order;
+ * - FIXED_DICT_DEFAULTS: type -> declared <Default> literal per field, only
+ *   for literal-safe values (numbers / quoted strings / true-false); engine
+ *   composite defaults (VECTOR3(...) etc.) are skipped, not guessed;
+ * - repr_fixed_dict: debug repr with the type name and fields in declaration
+ *   order, missing keys marked `<missing>`, undeclared keys `<unknown>`;
+ * - ensure_fixed_dict: convenience factory filling declared defaults for
+ *   missing keys, unknown keys rejected with the declared field list.
+ *
+ * Acceptance anchor: repr output contains the type name and the declared
+ * field order. Returns null when the group has no FIXED_DICT entries (no
+ * runtime file beside a class-less stub module).
+ */
+export function buildKbeRuntimeModule(
+  customTypes: readonly CustomTypeInfo[]
+): string | null {
+  const fixedDicts = customTypes.filter(info => info.aliasType === FIXED_DICT_TYPE_NAME);
+  if (fixedDicts.length === 0) {
+    return null;
+  }
+  const fieldsLines = fixedDicts.map(info => {
+    const names = info.properties.map(property => `'${escapeSingleQuoted(property.name)}'`);
+    return `    '${escapeSingleQuoted(info.name)}': (${names.join(', ')}${names.length === 1 ? ',' : ''}),`;
+  });
+  const defaultsLines: string[] = [];
+  for (const info of fixedDicts) {
+    const defaults: string[] = [];
+    for (const property of info.properties) {
+      const literal = pythonLiteralOfDefault(property.defaultValue);
+      if (literal !== null) {
+        defaults.push(`'${escapeSingleQuoted(property.name)}': ${literal}`);
+      }
+    }
+    if (defaults.length > 0) {
+      defaultsLines.push(`    '${escapeSingleQuoted(info.name)}': {${defaults.join(', ')}},`);
+    }
+  }
+  const lines: string[] = [
+    '# Kode generated runtime helpers, paired with kbe_types.pyi.',
+    '# Regenerated on types.xml / .def changes; do not edit by hand.',
+    '',
+    '# FIXED_DICT_FIELDS: type -> field names in declaration order.',
+    'FIXED_DICT_FIELDS = {',
+    ...fieldsLines,
+    '}',
+    '',
+    '# FIXED_DICT_DEFAULTS: type -> {field: declared <Default> literal};',
+    '# composite engine defaults are skipped (not guessed).',
+    'FIXED_DICT_DEFAULTS = {',
+    ...defaultsLines,
+    '}',
+    '',
+    '',
+    'def fixed_dict_fields(type_name):',
+    '    """Field names of type_name in declaration order ([] when unknown)."""',
+    '    return list(FIXED_DICT_FIELDS.get(type_name, ()))',
+    '',
+    '',
+    'def repr_fixed_dict(value, type_name):',
+    '    """Debug repr: type name + fields in declaration order.',
+    '',
+    '    Missing declared keys are marked <missing>; keys not in the',
+    '    declaration are marked <unknown> (honest surface, no guessing).',
+    '    """',
+    '    fields = fixed_dict_fields(type_name)',
+    '    parts = []',
+    '    for field in fields:',
+    '        if field in value:',
+    "            parts.append('%s=%r' % (field, value[field]))",
+    '        else:',
+    "            parts.append('%s=<missing>' % field)",
+    '    for field in value:',
+    '        if field not in fields:',
+    "            parts.append('%s=<unknown> %r' % (field, value[field]))",
+    "    return '%s(%s)' % (type_name or type(value).__name__, ', '.join(parts))",
+    '',
+    '',
+    'def ensure_fixed_dict(type_name, data):',
+    '    """Convenience factory: fill declared defaults for missing keys.',
+    '',
+    '    Unknown keys raise KeyError with the declared field list; missing',
+    '    keys without a declared default stay absent (the engine fills them).',
+    '    """',
+    '    fields = FIXED_DICT_FIELDS.get(type_name)',
+    '    if fields is None:',
+    "        raise KeyError('unknown FIXED_DICT type: %s' % type_name)",
+    '    unknown = [key for key in data if key not in fields]',
+    '    if unknown:',
+    "        raise KeyError('%s fields are %s; unknown keys: %s' % (type_name, list(fields), unknown))",
+    '    result = dict(FIXED_DICT_DEFAULTS.get(type_name, {}))',
+    '    result.update(data)',
+    '    return result',
+    ''
+  ];
+  return lines.join('\n');
+}
+
+/** Single-quoted python string literal body (quotes/backslashes escaped) */
+function escapeSingleQuoted(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+/**
+ * <Default> text -> safe python literal (null when not literal-safe):
+ * integers, decimals, single/double-quoted strings, true/false. Engine
+ * composite defaults (VECTOR3(...), tuples) are skipped honestly.
+ */
+function pythonLiteralOfDefault(text: string | undefined): string | null {
+  const trimmed = text?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (/^-?\d+$/.test(trimmed) || /^-?\d+\.\d+$/.test(trimmed)) {
+    return trimmed;
+  }
+  if (trimmed === 'true' || trimmed === 'false') {
+    return trimmed === 'true' ? 'True' : 'False';
+  }
+  if (
+    trimmed.length >= 2 &&
+    (trimmed.startsWith("'") && trimmed.endsWith("'") ||
+      trimmed.startsWith('"') && trimmed.endsWith('"'))
+  ) {
+    const inner = trimmed.slice(1, -1);
+    if (!inner.includes(trimmed[0]) && !inner.includes('\\')) {
+      return `'${escapeSingleQuoted(inner)}'`;
+    }
+    return null;
+  }
+  return null;
+}
+
+/** writeModuleFile outcome: folded into the export loop's folder flags */
+type ModuleFileOutcome = 'written' | 'unchanged' | 'user-owned' | 'failed';
+
+/**
+ * Shared write discipline for one stub module file (kbe_types.pyi and the
+ * IDX-REL-004 kbe_runtime.py companion): user-owned dirs never overwrite an
+ * existing file; kode-managed dirs rewrite only on content drift; read or
+ * existence errors count as stale (rewrite); unwritable dirs report failure
+ * without blocking the remaining files/folders.
+ */
+function writeModuleFile(
+  deps: StubExportDeps,
+  resolved: { dir: string; userOwned?: boolean },
+  moduleKey: string,
+  fileName: string,
+  content: string,
+  mkdirDone?: Set<string>
+): ModuleFileOutcome {
+  const target = moduleKey === ''
+    ? joinPath(resolved.dir, fileName)
+    : joinPath(resolved.dir, moduleKey, fileName);
+  if (resolved.userOwned && deps.exists(target)) {
+    return 'user-owned';
+  }
+  let unchanged = false;
+  try {
+    unchanged = deps.exists(target) && deps.readFile(target) === content;
+  } catch {
+    unchanged = false;
+  }
+  if (unchanged) {
+    return 'unchanged';
+  }
+  try {
+    const moduleDir = moduleKey === '' ? resolved.dir : joinPath(resolved.dir, moduleKey);
+    // One mkdir per module dir per folder pass: the .pyi and the runtime
+    // companion share the dir, a second mkdir call would pollute call logs
+    // that tests pin exactly.
+    if (!mkdirDone || !mkdirDone.has(moduleDir)) {
+      deps.mkdir(moduleDir);
+      mkdirDone?.add(moduleDir);
+    }
+    deps.writeFile(target, content);
+    return 'written';
+  } catch {
+    return 'failed';
+  }
 }
 
 export interface PythonTypeStubExportOptions {
@@ -805,6 +1011,9 @@ export async function exportPythonTypeStubs(
     });
     let folderWritten = false;
     let folderFailed = false;
+    // 一目录一 mkdir(见 writeModuleFile):.pyi 与 kbe_runtime.py 同目录,
+    // 重复 mkdir 会污染逐调用断言的目录清单
+    const mkdirDone = new Set<string>();
     // 两遍解析(pyi ④):先按镜像目录分组建各模块计划拿发射名,再把「别的
     // 模块已发射的名字」配成跨模块引用面重解析——引用只改头部导入,不改
     // 条目面,两遍 entries 恒一致。
@@ -835,33 +1044,31 @@ export async function exportPythonTypeStubs(
       if (plan.content === null) {
         continue;
       }
-      const target =
-        moduleKey === ''
-          ? joinPath(resolved.dir, PYTHON_TYPE_STUB_FILE_NAME)
-          : joinPath(resolved.dir, moduleKey, PYTHON_TYPE_STUB_FILE_NAME);
-      // 用户指定目录是用户资产:目标文件已在就不碰;默认目录归 kode 自管,
-      // 走内容比对。
-      if (resolved.userOwned && deps.exists(target)) {
-        skipped.push(`${folder.name}(${target} 已存在,按用户资产不覆盖)`);
-        continue;
-      }
-      // 一致性比对段防御:存在性判定/读取抛错(权限等)按陈旧处理触发重写
-      let unchanged = false;
-      try {
-        unchanged = deps.exists(target) && deps.readFile(target) === plan.content;
-      } catch {
-        unchanged = false;
-      }
-      if (unchanged) {
-        continue;
-      }
-      try {
-        deps.mkdir(moduleKey === '' ? resolved.dir : joinPath(resolved.dir, moduleKey));
-        deps.writeFile(target, plan.content);
+      const outcome = writeModuleFile(
+        deps, resolved, moduleKey, PYTHON_TYPE_STUB_FILE_NAME, plan.content, mkdirDone
+      );
+      if (outcome === 'written') {
         folderWritten = true;
-      } catch {
-        // 目录不可写(只读挂载/权限):如实告警,不挡其余文件与文件夹
+      } else if (outcome === 'failed') {
         folderFailed = true;
+      } else if (outcome === 'user-owned') {
+        skipped.push(`${folder.name}(${joinPath(resolved.dir, moduleKey, PYTHON_TYPE_STUB_FILE_NAME)} 已存在,按用户资产不覆盖)`);
+      }
+      // IDX-REL-004: kbe_runtime.py 伴生模块(调试辅助层)——同目录同纪律
+      // (内容一致零写/用户资产不碰/目录不可写告警继续),FD 条目为空不落
+      // 文件;写在 .pyi 之后,既有逐写断言的首写位仍是 kbe_types.pyi
+      const runtimeContent = buildKbeRuntimeModule(moduleGroups.get(moduleKey)!);
+      if (runtimeContent !== null) {
+        const runtimeOutcome = writeModuleFile(
+          deps, resolved, moduleKey, KBE_RUNTIME_FILE_NAME, runtimeContent, mkdirDone
+        );
+        if (runtimeOutcome === 'written') {
+          folderWritten = true;
+        } else if (runtimeOutcome === 'failed') {
+          folderFailed = true;
+        } else if (runtimeOutcome === 'user-owned') {
+          skipped.push(`${folder.name}(${KBE_RUNTIME_FILE_NAME} 已存在,按用户资产不覆盖)`);
+        }
       }
     }
     if (folderWritten) {
@@ -888,25 +1095,53 @@ export async function exportPythonTypeStubs(
 }
 
 /**
- * types.xml watcher 自动重生成(def-pyi-stubs §4 二期):保存/新建/删除
- * types.xml 后静默重导出 .pyi 分件。不设去抖、不加开关——导出函数自带
- * `kbengine.python.stubExport` 门(关掉即停),内容确定性与零写纪律保证
- * 重复触发无副作用;快照每次直读磁盘,事件到达即读到新内容,无缓存竞态。
- * watcher 只盯 types.xml:kbe_types.pyi 的内容来源仅此一类文件,写自己的
- * 生成物不会反触发自己。
+ * Test seam for setupTypeStubRegeneration: drives the regeneration directly
+ * (production events arrive from the real watchers' globs and call the same
+ * regenerate; the aggregate exists so tests can fire both arms through one
+ * handle that is also pushed into context.subscriptions).
+ */
+export interface TypeStubRegenerationHandle {
+  fireChange(uri: vscode.Uri): void;
+  fireCreate(uri: vscode.Uri): void;
+  fireDelete(uri: vscode.Uri): void;
+  dispose(): void;
+}
+
+/**
+ * types.xml/.def watcher 自动重生成(def-pyi-stubs §4 二期 + IDX-REL-004):
+ * 保存/新建/删除 types.xml 后静默重导出 .pyi 分件;IDX-REL-004 起 .def 也
+ * 是 kbe_types.pyi 的内容来源(内联 FIXED_DICT 合成条目),.def 增删改
+ * 同样触发。不设去抖、不加开关——导出函数自带 `kbengine.python.stubExport`
+ * 门(关掉即停),内容确定性与零写纪律保证重复触发无副作用;快照每次直读
+ * 磁盘,事件到达即读到新内容,无缓存竞态。诚实边界:alias.xml 同为注册表
+ * 来源但本 watcher 不盯(既有边界,非本批引入),alias 变更后的桩刷新仍走
+ * 激活期导出/手动命令;写自己的生成物不会反触发自己(不盯 .pyi)。
  */
 export function setupTypeStubRegeneration(
   context: vscode.ExtensionContext,
   deps: StubExportDeps = fileSystemStubExportDeps,
   listCustomTypes?: (workspaceRoot: string) => CustomTypeInfo[]
-): vscode.FileSystemWatcher {
-  const watcher = vscode.workspace.createFileSystemWatcher('**/types.xml');
+): TypeStubRegenerationHandle {
+  const typesWatcher = vscode.workspace.createFileSystemWatcher('**/types.xml');
+  const defWatcher = vscode.workspace.createFileSystemWatcher('**/*.def');
   const regenerate = (): void => {
     void exportPythonTypeStubs(deps, { silent: true, listCustomTypes });
   };
-  watcher.onDidChange(regenerate);
-  watcher.onDidCreate(regenerate);
-  watcher.onDidDelete(regenerate);
-  context.subscriptions.push(watcher);
-  return watcher;
+  for (const watcher of [typesWatcher, defWatcher]) {
+    watcher.onDidChange(regenerate);
+    watcher.onDidCreate(regenerate);
+    watcher.onDidDelete(regenerate);
+    context.subscriptions.push(watcher);
+  }
+  const handle: TypeStubRegenerationHandle = {
+    fireChange: () => regenerate(),
+    fireCreate: () => regenerate(),
+    fireDelete: () => regenerate(),
+    dispose: () => {
+      typesWatcher.dispose();
+      defWatcher.dispose();
+    }
+  };
+  context.subscriptions.push(handle);
+  return handle;
 }

@@ -36,7 +36,10 @@ export { PYTHON_TYPE_STUB_FALLBACK };
 
 /** def 属性定位结果(.def 声明面) */
 export interface DefPropertyLocation {
+  /** 注册表键名(内联 FIXED_DICT 为合成名,IDX-REL-004) */
   typeName?: string | null;
+  /** def <Type> 字面文本(内联 FIXED_DICT 为 'FIXED_DICT';形态判定用) */
+  rawTypeName?: string | null;
   line: number;
   defFile: string;
 }
@@ -73,8 +76,10 @@ export interface SelfPropertyResolved {
   defLine: number;
   /** 目标表达式文本(悬停目标,来源标注) */
   expr: string;
-  /** def <Type> 直文本(仅 def-property 面;C-23 hover 行为注记用) */
+  /** def <Type> 直文本(仅 def-property 面;C-23 hover 行为注记用;内联 FD 为合成名) */
   typeName?: string | null;
+  /** def <Type> 字面文本(内联 FIXED_DICT 为 'FIXED_DICT';形态判定优先用) */
+  rawTypeName?: string | null;
 }
 
 /** 变量间接最大深度(赋值/迭代目标 → 源表达式再追一层;防环/长链) */
@@ -161,8 +166,10 @@ async function resolveSelfAccess(
     defFile: location.defFile,
     defLine: location.line,
     expr: `self.${fullPath}`,
-    // C-23 hover 行为注记:<Type> 直文本(调用方据此查 FIXED_DICT 形态)
-    typeName: location.typeName
+    // C-23 hover 行为注记:<Type> 直文本(调用方据此查 FIXED_DICT 形态;
+    // 内联 FD 的字面文本在 rawTypeName,合成名在 typeName)
+    typeName: location.typeName,
+    rawTypeName: location.rawTypeName
   };
 }
 
