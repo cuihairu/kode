@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import KBEngine
 import time
+import cultivation
 from KBEDebug import *
 from DemoConsts import DEMO_ATTACK_RANGE, DEMO_AVATAR_DAMAGE, DEMO_ATTACK_COOLDOWN, DEMO_BOTS_MOVE_VELOCITY
 
@@ -34,17 +35,26 @@ class Avatar(KBEngine.Entity):
 			self._attack(best)
 
 	def _attack(self, target):
-		"""共攻击路径:冷却校验 + 锚点日志 + 目标 receiveDamage。"""
+		"""共攻击路径:冷却校验 + 五行乘数(012)+ 锚点日志 + 目标 receiveDamage。"""
 		now = time.time()
 		if now - self.lastAttackAt < DEMO_ATTACK_COOLDOWN:
 			return
 		self.lastAttackAt = now
-		msg = "Avatar[%i].reqAttack hit %s[%i] dmg=%i" % (
-			self.id, getattr(target, "className", "Entity"), target.id, DEMO_AVATAR_DAMAGE,
+		# 五行亲和(DEMO-GAME-012):攻守主灵根过 cultivation.affinity 纯函数
+		# (相克 1.5/相生 1.1/被克 0.8/中性 1.0);无灵根方(怪物缺省 0)走中性。
+		mult = cultivation.affinity(
+			getattr(self, "dominantRoot", cultivation.ROOT_NONE),
+			getattr(target, "dominantRoot", cultivation.ROOT_NONE),
+		)
+		damage = int(DEMO_AVATAR_DAMAGE * mult)
+		msg = "Avatar[%i].reqAttack hit %s[%i] dmg=%i root=%i vs %i mult=%.2f" % (
+			self.id, getattr(target, "className", "Entity"), target.id, damage,
+			getattr(self, "dominantRoot", cultivation.ROOT_NONE),
+			getattr(target, "dominantRoot", cultivation.ROOT_NONE), mult,
 		)
 		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
-		target.receiveDamage(DEMO_AVATAR_DAMAGE, self.id)
+		target.receiveDamage(damage, self.id)
 
 	def reqAttack(self, targetId):
 		"""

@@ -58,6 +58,16 @@ class Avatar(KBEngine.Proxy):
 		if space is None or space.cell is None:
 			ERROR_MSG("Avatar[%i].enterSpace: space(%i) not ready" % (self.id, spaceIndex))
 			return
+		# 五行战斗(DEMO-GAME-012):spiritRoots 是 BASE_AND_CLIENT,cell 面不可见;
+		# 主灵根换算成 UINT8 桥属性,createCellEntity 前落 base 侧即随 cellData
+		# 进 cell(引擎建 cellData 收 cell 可见面初值)。
+		self.dominantRoot = cultivation.dominant_root(self.spiritRoots)
+		msg = "Avatar[%i] enterSpace dominantRoot=%i (%s)" % (
+			self.id, self.dominantRoot,
+			cultivation.ROOT_KEYS[self.dominantRoot - 1] if self.dominantRoot else "none",
+		)
+		print("[demo-evidence] %s" % msg, flush=True)
+		evidenceLog(msg)
 		self.createCellEntity(space.cell)
 
 	def onAvatarDead(self):

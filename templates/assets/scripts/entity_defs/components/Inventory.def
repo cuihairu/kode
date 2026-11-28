@@ -5,10 +5,12 @@
 			<Flags> CELL_PUBLIC </Flags>
 			<Persistent> true </Persistent>
 		</gold>
+		<!-- DEMO-GAME-013: stacks of ITEM_INFO{itemId,count}; merging
+		     rules live in cultivation.merge_stack (STACK_MAX 99). -->
 		<items>
 			<Type>
 				ARRAY
-				<of> ITEM_ID </of>
+				<of> ITEM_INFO </of>
 			</Type>
 			<Flags> CELL_PUBLIC </Flags>
 			<Persistent> true </Persistent>
@@ -17,8 +19,14 @@
 
 	<CellMethods>
 		<onItemGained>
-			<Arg> ITEM_ID </Arg>
+			<Arg> ITEM_INFO </Arg>
 		</onItemGained>
+		<!-- Cell-face entry: monster kill rewards / quests call
+		     killer.bag.addItem(itemId, count) on the same cellapp. -->
+		<addItem>
+			<Arg> ITEM_ID </Arg>
+			<Arg> UINT16 </Arg>
+		</addItem>
 	</CellMethods>
 
 </root>

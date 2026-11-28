@@ -404,10 +404,10 @@ describe('数据库 schema:实体表 + 组件表 + 数组子表', () => {
 
     const arrayTable = snapshot!.tableIndex.get('tbl_Avatar_bag_items');
     expect(arrayTable, '数组属性 items 应有子表').toBeDefined();
-    // 元素列走引擎 getValStr 文本语义(xml.cpp getValStr 只认文本子节点):
-    // <of><Type>ITEM_ID</Type></of> 的 of 首子是元素,引擎读空串装载失败,
-    // 正确写法是 <of> ITEM_ID </of> 文本形态 → 元素列 sm_value 落 ITEM_ID 解析型
-    expect(arrayTable!.fields.map(f => f.name)).toContain('sm_value');
+    // DEMO-GAME-013: 元素是 ITEM_INFO(FIXED_DICT)→ 键平铺成列
+    // (同 skillSlots 判例),sm_itemId/sm_count 两列随子表
+    expect(arrayTable!.fields.map(f => f.name)).toContain('sm_itemId');
+    expect(arrayTable!.fields.map(f => f.name)).toContain('sm_count');
 
     // skillSlots 的 <of> 必须挂在 <Type> 内(datatype.cpp 从 Type 节点找 of):
     // 元素是 SKILL_SLOT(FIXED_DICT)→ 键平铺成列 + 数组键再出子表

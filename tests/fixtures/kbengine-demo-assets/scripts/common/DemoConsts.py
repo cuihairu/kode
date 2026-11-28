@@ -40,3 +40,8 @@ FORMATION_BUFF_RATIO = 0.1         # per-member damage buff ratio while in forma
 SECT_MAX_MEMBERS = 100             # roster cap of one sect
 SECT_CREATE_COST_GOLD = 500        # gold required to found a sect
 SECT_DONATE_EXP_RATIO = 0.1        # ratio of donated experience kept as sect funds
+
+# Bag stacking / monster drops (DEMO-GAME-013)
+DEMO_BAG_CAPACITY = 20             # slot cap of the Inventory bag
+DEMO_DROP_ITEM_ID = 1              # item dropped per monster kill (妖兽材料)
+DEMO_DROP_ITEM_COUNT = 1           # stack count added per kill

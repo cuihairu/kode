@@ -220,3 +220,15 @@ def pet_follow_point(owner_pos, pet_pos):
     if dist > PET_FOLLOW_DIST:
         return tuple(owner_pos)
     return None
+
+
+# ---- Races (DEMO-GAME-069) ----
+
+RACE_HUMAN = 1  # ren zu
+RACE_YAO = 2    # yao zu
+RACES = (RACE_HUMAN, RACE_YAO)
+
+
+def normalize_race(race):
+    """Clamp to an open race; anything but yao falls back to human."""
+    return RACE_YAO if race == RACE_YAO else RACE_HUMAN

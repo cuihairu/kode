@@ -155,6 +155,18 @@ class CreationPropsTests(unittest.TestCase):
         self.assertEqual(set(roots), set(XX.ROOT_KEYS))
 
 
+class RaceTests(unittest.TestCase):
+    # DEMO-GAME-069: only human (1) and yao (2) are open; anything else
+    # normalizes to human.
+    def test_normalize_race(self):
+        self.assertEqual(XX.normalize_race(XX.RACE_HUMAN), XX.RACE_HUMAN)
+        self.assertEqual(XX.normalize_race(XX.RACE_YAO), XX.RACE_YAO)
+        self.assertEqual(XX.normalize_race(0), XX.RACE_HUMAN)
+        self.assertEqual(XX.normalize_race(3), XX.RACE_HUMAN)
+        self.assertEqual(XX.normalize_race(255), XX.RACE_HUMAN)
+        self.assertEqual(XX.RACES, (XX.RACE_HUMAN, XX.RACE_YAO))
+
+
 class DemoConstsTests(unittest.TestCase):
     def setUp(self):
         spec = importlib.util.spec_from_file_location(

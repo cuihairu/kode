@@ -7,7 +7,7 @@ import cultivation
 import monster_ai
 from Avatar import Avatar
 from KBEDebug import *
-from DemoConsts import DEMO_GOLD_PER_KILL, DEMO_XP_PER_KILL
+from DemoConsts import DEMO_DROP_ITEM_COUNT, DEMO_DROP_ITEM_ID, DEMO_GOLD_PER_KILL, DEMO_XP_PER_KILL
 
 
 # def 侧 <Parent> Avatar 的脚本面镜像:引擎 checkDefMethod 要求父类 def 合并
@@ -87,6 +87,8 @@ class Monster(Avatar):
 				)
 				print("[demo-evidence] %s" % msg, flush=True)
 				evidenceLog(msg)
+				# 掉落入袋(DEMO-GAME-013):堆叠合并走 bag.addItem 纯函数核。
+				killer.bag.addItem(DEMO_DROP_ITEM_ID, DEMO_DROP_ITEM_COUNT)
 			self.destroy()
 
 	def think(self):

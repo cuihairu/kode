@@ -44,16 +44,20 @@ class Account(KBEngine.Proxy):
 		DEBUG_MSG("Account[%i].onClientDeath:" % self.id)
 		self.destroy()
 
-	def reqCreateAvatar(self, name):
+	def reqCreateAvatar(self, name, race):
 		"""
 		exposed.
 		客户端请求创建角色:本地建 Avatar(Proxy,其 __init__ 内入空间建 cell),
 		随后把客户端交接到 Avatar。建角随机 roll 五灵根注入 props
 		(DEMO-GAME-009;引擎自动把 props 键落到同名实体属性)。
+		种族(DEMO-GAME-069):1=人族 2=妖族,越界归一 normalize_race。
 		"""
 		props = cultivation.creation_props(name, random.Random())
-		INFO_MSG("Account[%i].reqCreateAvatar: %s spiritRoots=%s" % (self.id, name, props["spiritRoots"]))
-		msg = "Account[%i].reqCreateAvatar: %s spiritRoots=%s" % (self.id, name, props["spiritRoots"])
+		props["race"] = cultivation.normalize_race(race)
+		INFO_MSG("Account[%i].reqCreateAvatar: %s race=%i spiritRoots=%s" % (
+			self.id, name, props["race"], props["spiritRoots"]))
+		msg = "Account[%i].reqCreateAvatar: %s race=%i spiritRoots=%s" % (
+			self.id, name, props["race"], props["spiritRoots"])
 		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		avatar = KBEngine.createEntityLocally("Avatar", props)

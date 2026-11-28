@@ -21,6 +21,8 @@
 		<reqCreateAvatar>
 			<Exposed> true </Exposed>
 			<Arg> STRING </Arg>
+			<!-- DEMO-GAME-069: 1 = human, 2 = yao (only these two open). -->
+			<Arg> UINT8 </Arg>
 		</reqCreateAvatar>
 	</BaseMethods>
 

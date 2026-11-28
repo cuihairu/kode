@@ -3,10 +3,11 @@ import random
 import time
 
 import KBEngine
+import cultivation
 import monster_ai
 from Avatar import Avatar
 from KBEDebug import *
-from DemoConsts import DEMO_GOLD_PER_KILL, DEMO_XP_PER_KILL
+from DemoConsts import DEMO_DROP_ITEM_COUNT, DEMO_DROP_ITEM_ID, DEMO_GOLD_PER_KILL, DEMO_XP_PER_KILL
 
 
 # def 侧 <Parent> Avatar 的脚本面镜像:引擎 checkDefMethod 要求父类 def 合并
@@ -86,6 +87,8 @@ class Monster(Avatar):
 				)
 				print("[demo-evidence] %s" % msg, flush=True)
 				evidenceLog(msg)
+				# 掉落入袋(DEMO-GAME-013):堆叠合并走 bag.addItem 纯函数核。
+				killer.bag.addItem(DEMO_DROP_ITEM_ID, DEMO_DROP_ITEM_COUNT)
 			self.destroy()
 
 	def think(self):
@@ -176,9 +179,18 @@ class Monster(Avatar):
 		elif action == "attack":
 			if target is not None:
 				self.aiLastAttackAt = now
-				target.receiveDamage(monster_ai.DEMO_DAMAGE, self.id)
-				msg = "Monster[%i] ATTACK hit Avatar[%i] dmg=%i targetHp=%i" % (
-					self.id, target.id, monster_ai.DEMO_DAMAGE, target.hp,
+				# 五行亲和(DEMO-GAME-012):怪物出手过同一乘数面;怪物缺省
+				# dominantRoot=0(中性),spawn 表可按表发根让克制生效。
+				mult = cultivation.affinity(
+					getattr(self, "dominantRoot", cultivation.ROOT_NONE),
+					getattr(target, "dominantRoot", cultivation.ROOT_NONE),
+				)
+				damage = int(monster_ai.DEMO_DAMAGE * mult)
+				target.receiveDamage(damage, self.id)
+				msg = "Monster[%i] ATTACK hit Avatar[%i] dmg=%i root=%i vs %i mult=%.2f targetHp=%i" % (
+					self.id, target.id, damage,
+					getattr(self, "dominantRoot", cultivation.ROOT_NONE),
+					getattr(target, "dominantRoot", cultivation.ROOT_NONE), mult, target.hp,
 				)
 				print("[demo-evidence] %s" % msg, flush=True)
 				evidenceLog(msg)

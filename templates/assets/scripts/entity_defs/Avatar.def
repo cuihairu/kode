@@ -270,6 +270,14 @@
 			<Default> 0 </Default>
 			<Persistent> true </Persistent>
 		</vipLevel>
+		<!-- Race (DEMO-GAME-069): 1 = human, 2 = yao; chosen at avatar
+		     creation, open races gated by cultivation.RACES. -->
+		<race>
+			<Type> UINT8 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> 1 </Default>
+			<Persistent> true </Persistent>
+		</race>
 	</Properties>
 
 	<!-- 组件声明:引擎 loadComponents 逐条装载,组件 def 在 components/ 子目录 -->
