@@ -69,8 +69,12 @@ code {
 .vp-doc th,
 .vp-doc td {
   white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
+  word-break: normal;
+  overflow-wrap: break-word;
+  /* anywhere 会把单元格最小宽度压到 1 字符: auto 表格布局下
+     类型/默认值窄列被挤成逐字母竖排(bo/ol/ea/n), 表格不可读
+     (2026-11-28 用户实测截图)。break-word 保词完整性, 最小宽度
+     停在最长词, 窄列恢复合理列宽。 */
 }
 .vp-doc td code,
 .vp-doc th code {
