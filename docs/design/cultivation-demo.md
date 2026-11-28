@@ -27,7 +27,7 @@
 | 宠物 | 召唤/跟随/协战/名册持久化 | `Pet`(base+cell)+petList | 本战役 017 |
 | 阵法 | 空间放置/范围效果/到期销毁 | `Formation`(base+cell) | 本战役 018 |
 | 宗门 | 创建/加入/退出/成员名册持久化 | `Sect`(base-only) | 本战役 019 |
-| 储物袋堆叠 | 背包 ITEM_INFO 堆叠合并+杀怪掉落入袋 | Inventory items ARRAY<ITEM_INFO>+bag.addItem(merge_stack 核) | 本战役 013 已勾 |
+| 储物袋堆叠 | 背包 ITEM_INFO 堆叠合并+杀怪掉落入袋 | `Inventory items ARRAY<ITEM_INFO>`+`bag.addItem(merge_stack 核)` | 本战役 013 已勾 |
 | 宗门组织 | 职位(宗主/长老/内门/外门)、权限矩阵、部门(战斗堂/丹药堂/任务堂) | MEMBER_INFO 扩 rank/dept+权限纯函数 | 本战役 033 |
 | 任务 | 接任务系统(任务定义/接取/进度/交付/奖励),普通任务+宗门任务两类同面 | `Task` 实体+宗门任务榜 | 本战役 034 |
 | NPC | 空间驻留 NPC、对话、发布任务 | `Npc` 实体+Exposed 交互 | 本战役 035 |
@@ -52,13 +52,13 @@
 | 夺舍 | 魂迁入他人身体,可避轮回;原身死亡 | seizedByDbid+reqSeizeBody(CELL 闸)+onBodySeized/onSeizeResult | 本战役 057 |
 | 强化 | 装备强化等级成长(消耗+成功率) | reqStrengthenEquip+onStrengthenResult(EQUIP_SLOT.strengthen 既有字段) | 本战役 058 |
 | 排位赛 | 排位积分/段位/匹配进 arena 对战 | rankPoints+reqJoinRankedQueue/reqLeaveRankedQueue+onRankedMatchFound(spaceKind 2) | 本战役 059 |
-| 装备库 | 纯装备寄存库(飞行器/技能/翅膀/宠物/图鉴/榜不入库) | equipDepot ARRAY<EQUIP_SLOT>+reqDepotDeposit/reqDepotWithdraw | 本战役 060 |
+| 装备库 | 纯装备寄存库(飞行器/技能/翅膀/宠物/图鉴/榜不入库) | `equipDepot ARRAY<EQUIP_SLOT>`+`reqDepotDeposit/reqDepotWithdraw` | 本战役 060 |
 | 悬赏 | 发布(托管奖励)/接单/完成拿奖励 | reqPostBounty/reqAcceptBounty/reqTurnInBounty+onBountyPosted/onBountyResult | 本战役 061 |
 | 佣兵 | 雇佣名册+召唤协战 | MERC_INFO/MERCS+mercList+hiredMercId+reqHireMerc/reqDismissMerc/reqSummonMerc | 本战役 062 |
 | 货运战争/护送 | 护送目标任务+途中可劫(货运战争) | Task 面(034)扩展+护送目标实体(随 035) | 本战役 063 |
 | 迷宫乱斗 | 迷宫空间混战+存活排名发奖 | Space 实例(spaceKind=3,复用 049 kit) | 本战役 064 |
 | 挑战玩法组 | 世界boss/遗迹/暗域/远征/试炼 | Space 实例 kit(spaceKind 4..7)+世界boss 伤害榜 | 本战役 065 |
-| 成就系统图 | 里程碑解锁+图鉴面,联动称号 | achList ARRAY<UINT16>+onAchievementUnlocked | 本战役 066 |
+| 成就系统图 | 里程碑解锁+图鉴面,联动称号 | `achList ARRAY<UINT16>`+`onAchievementUnlocked` | 本战役 066 |
 | 运营活动组 | 首充/月卡/VIP;任务型活动走 Task 面 | firstRechargeDone/monthlyCardUntil/vipLevel+三领取入口 | 本战役 067 |
 | 服务器活动域 | 一个服的活动跟着这个服走:开服时间/世界等级/个人注册时间/物理时间/周期时间;有 server 对象承载 | Server 基座实体(开机单例)+五维活动时钟+activity_visible 纯函数核+globalData 广播位 | 本战役 070 |
 | 日切/周切 | 周期重置:每日/每周界点重算,重置领取位与周常 | day_index/week_index 纯函数+Server 定时判界广播 onDayReset/onWeekReset | 本战役 071 |
