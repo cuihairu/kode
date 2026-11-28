@@ -58,8 +58,12 @@ code {
 .VPDoc:not(.has-sidebar) .content {
   max-width: 1152px !important;
 }
+/* has-aside 布局必须给右侧大纲栏留位: 之前 content-container 强行 1152px,
+   加上 aside 256px 超出视口, aside 退化为半透明悬浮层叠印在表格说明列上
+   (2026-11-28 用户截图实证)。带 aside 时收窄到 896px, 896+256+padding≈1200
+   在 1280 视口内正常并排。 */
 .VPDoc.has-aside .content-container {
-  max-width: 1152px !important;
+  max-width: 896px !important;
 }
 /* 表格按内容分配列宽(Type/默认值等窄列不占大空间),长文字自动换行 */
 .vp-doc table {
