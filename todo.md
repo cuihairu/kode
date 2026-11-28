@@ -3240,5 +3240,9 @@ MCP 面此前只有「二进制在位」三可见态(已构建/未构建/已关�
 - [ ] DEMO-GAME-036 [P1] 跨服玩法(2026-11-28 用户令「必须有一种跨服玩法」):KBEngine 跨服机制考证(源码面:多服务组/space 复制/globalData 跨组/双服实例共享 MySQL 哪条真通)→ demo 落地一种(候选:跨服演武场=双服务组玩家进同一空间竞技,或跨服 Boss);双服务组真机起服验收(run-demo-engine.sh 扩双组);矩阵补 KBEngine 跨服覆盖项
 - [ ] DEMO-GAME-037 [P1] 邮件系统(2026-11-28 用户令「必须有邮件系统」):Mail 实体(base-only 持久化,发件人/收件人/标题/正文/附件 ARRAY<ITEM_INFO> 子表)+登录收信(Avatar 登录拉取未读)/附件领取进容器/删除;真机锚发件→收件→领附件全回路+tbl_Mail 真表
 - [ ] DEMO-GAME-038 [P1] 容器物品族(2026-11-28 用户令「背包系统就是有空间能力的物品」):储物袋 StorageBag/收纳戒 SpatialRing/储物空间 StorageSpace 三档容器=物品(Parent=Item)+capacity+contents ARRAY<ITEM_INFO> 嵌套子表面;存取走容器实体(writeToDB 持久化到各自真表);Avatar 侧容器栏;真机锚三档容量上限差异+容器内物品重启仍在
+- [ ] DEMO-GAME-039 [P1] 技能系统(2026-11-28 用户令「有技能」):技能表(主动/被动,冷却/灵力消耗/伤害公式带五行亲和)/学习升级(SKILL_SLOT 槽位消费面贯通,现有 reqCastSkill 骨架扩成真技能)/技能效果(AOE/单体/buff);真机锚放技能掉血+冷却拦截+灵力扣减
+- [ ] DEMO-GAME-040 [P1] 活动系统(2026-11-28 用户令「有活动系统」):Activity 常驻 base 实体(活动开关/时间窗/参与名单/奖励发放)+活动公告广播(ALL_CLIENTS 面)+双倍掉落/双倍经验两类样例活动;真机锚开活动→奖励翻倍→关活动恢复
+- [ ] DEMO-GAME-041 [P1] Redis 排行榜(2026-11-28 用户令「redis的排行榜」):redis 连接面(引擎 dbmgr redis interface 或脚本侧客户端,源码考证后定)+等级/战力双榜(sorted set)+上榜/查询/名次展示;kode redis 面对账(REDIS 腿既有双裁挂起不混);真机锚杀怪上榜+名次查询正确
+- [ ] DEMO-GAME-042 [P1] 合服(2026-11-28 用户令「合服」):合服工具=DB 两服务组数据合并(账号表/实体表/宗门名唯一冲突/ID 冲突重映射/dmgmr 建表口径对拍)+合服后起服验收(双组数据合一可登录可查);与 036 跨服对账(跨服=双组互通玩法,合服=双组数据并组,机制不同都做)
 
 已完成本日前置(载体 01c8dd7a):templates/demo-game→templates/assets 改名(全部引用收编,vitest 67/67+python 3 门绿);templates/kbe 引擎源树入仓(137M,排除 .a/.o 构建产物,.vscodeignore 排 VSIX)。
