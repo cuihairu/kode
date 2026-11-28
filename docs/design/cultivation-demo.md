@@ -33,7 +33,7 @@
 | 排行榜 | Redis 榜(等级/战力,sorted set) | redis 连接面+双榜 | 本战役 041 |
 | 跨服 | 必须有一种跨服玩法(双服务组互通) | 机制考证后落跨服演武/Boss | 本战役 036 |
 | 合服 | 双服务组数据并组(ID 冲突/宗门名冲突) | 合服 DB 工具+验收 | 本战役 042 |
-| 聊天 | 世界/宗门/私聊三频道,防刷屏 | `CHAT_MSG`+reqChatMessage(Exposed)+定向推送 | 本战役 044 |
+| 聊天 | 六频道:世界/宗门/私聊/组队/系统/走马灯(滚动横幅),防刷屏 | `CHAT_MSG`+reqChatMessage(Exposed)+定向推送 | 本战役 044 |
 | 好友 | 名册持久化+在线位 | `friendList ARRAY<FRIEND_INFO>` 属性同步 | 本战役 045 |
 | 交易 | **面对面**交易:距离闸+报价/锁定/双确认 | `Trade`(base-only 非持久化会话)+cell 面距离校验 | 本战役 046 |
 | 商城 | 货目持久化,灵石购买 | `Mall`(base-only)+`MALL_GOODS`+reqBuyGoods | 本战役 047 |
