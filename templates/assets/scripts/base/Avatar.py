@@ -14,12 +14,14 @@ from DemoConsts import DEMO_BAG_CAPACITY, DEMO_LEVEL_UP_STEP, DEMO_RESPAWN_DELAY
 from Spaces import spaceByIndex
 
 TIMER_RESPAWN = 1
+TIMER_FORMATION_PLACE = 2
 
 
 class Avatar(KBEngine.Proxy):
 	def __init__(self):
 		KBEngine.Proxy.__init__(self)
 		self.lastAttackAt = 0.0
+		self._pendingFormations = []
 		INFO_MSG("Avatar[%i] created, name=%s" % (self.id, self.name))
 		msg = "Avatar[%i] created, name=%s -> enterSpace(%i)" % (self.id, self.name, DEMO_SPACE_INDEX)
 		print("[demo-evidence] %s" % msg, flush=True)
@@ -88,12 +90,56 @@ class Avatar(KBEngine.Proxy):
 		"""
 		KBEngine method.(基座计时器:重生回调)
 		"""
+		if userArg == TIMER_FORMATION_PLACE:
+			self._flushPendingFormations()
+			return
 		if userArg != TIMER_RESPAWN:
 			return
 		msg = "Avatar[%i] RESPAWN -> enterSpace(%i) (fresh cell, full hp)" % (self.id, DEMO_SPACE_INDEX)
 		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		self.enterSpace(DEMO_SPACE_INDEX)
+
+	def _flushPendingFormations(self):
+		"""Deferred placement queue (Space spawn convention: cell creation
+		never nested inside a creation flow)."""
+		pending, self._pendingFormations = self._pendingFormations, []
+		space = spaceByIndex.get(DEMO_SPACE_INDEX)
+		for f in pending:
+			if f is None or f.isDestroyed:
+				continue
+			if space is None or space.cell is None:
+				ERROR_MSG("Avatar[%i].reqPlaceFormation: space not ready" % self.id)
+				continue
+			f.createCellEntity(space.cell)
+			msg = "Avatar[%i] PLACE FORMATION kind=%s id=%i owner=%i at (%.1f,%.1f)" % (
+				self.id, f.kind, f.id, self.dbid,
+				f.cellData["position"][0], f.cellData["position"][2],
+			)
+			print("[demo-evidence] %s" % msg, flush=True)
+			evidenceLog(msg)
+			if self.client is not None:
+				self.client.onFormationPlaced(f.kind, f.id)
+
+	def reqPlaceFormation(self, kind):
+		"""
+		Exposed.(DEMO-GAME-018: place a formation ring at the caster's feet;
+		gather heals, bind slows) Spawn position rides cellData["position"]
+		(BASEAPP streams cell position from cellData, entity_macro.h).
+		"""
+		if kind not in cultivation.FORMATION_TYPES:
+			kind = "gather"
+		f = KBEngine.createEntityLocally("Formation", {
+			"kind": kind,
+			"ownerId": self.dbid,
+			"ownerEntityId": self.id,
+		})
+		if f is None:
+			ERROR_MSG("Avatar[%i].reqPlaceFormation: create Formation failed" % self.id)
+			return
+		f.cellData["position"] = (self.position.x, self.position.y, self.position.z)
+		self._pendingFormations.append(f)
+		self.addTimer(0.1, 0, TIMER_FORMATION_PLACE)
 
 	def cellAddExperience(self, xp):
 		"""

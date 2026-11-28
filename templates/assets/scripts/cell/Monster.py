@@ -25,6 +25,7 @@ class Monster(Avatar):
 		self.aiMoving = False
 		self.aiLastAttackAt = 0.0
 		self.aiRng = random.Random()
+		self.aiSpeedScale = 1.0  # bind 阵法减速因子(DEMO-GAME-018)
 		self.addTimer(0.5, 0.5, TIMER_THINK)
 
 	def onAggro(self, entityId):
@@ -122,6 +123,20 @@ class Monster(Avatar):
 				best, bestDist = e, d
 		return best
 
+	def _bindScale(self):
+		"""阵法减速(DEMO-GAME-018):圈内 bind 法阵取其减速因子,圈外 1.0。
+		Formation 是独立 utype(无 Parent 链),entitiesInRange 精准命中。"""
+		radius, factor = cultivation.FORMATION_TYPES.get("bind", (10.0, 0.5))
+		scale = 1.0
+		for f in self.entitiesInRange(radius, "Formation"):
+			if getattr(f, "kind", "") != "bind":
+				continue
+			dx = self.position.x - f.position.x
+			dz = self.position.z - f.position.z
+			if (dx * dx + dz * dz) ** 0.5 <= radius and factor < scale:
+				scale = factor
+		return scale
+
 	def _setState(self, newState):
 		if newState == self.aiState:
 			return
@@ -147,6 +162,12 @@ class Monster(Avatar):
 		if userArg != TIMER_THINK:
 			return
 		now = time.time()
+		scale = self._bindScale()
+		if scale != self.aiSpeedScale:
+			msg = "Monster[%i] BIND speed x%.1f (formation ring)" % (self.id, scale)
+			print("[demo-evidence] %s" % msg, flush=True)
+			evidenceLog(msg)
+			self.aiSpeedScale = scale
 		target = self._pickTarget()
 		if target is not None:
 			self.aiTargetId = target.id
@@ -168,13 +189,14 @@ class Monster(Avatar):
 			if not self.aiMoving:
 				self._moveToPoint(
 					monster_ai.choose_wander_point(self.aiHomePos, monster_ai.WANDER_RADIUS, self.aiRng),
-					monster_ai.MOVE_VELOCITY,
+					monster_ai.MOVE_VELOCITY * self.aiSpeedScale,
 				)
 		elif action == "chase":
 			if target is not None and not self.aiMoving:
 				self.aiMoving = True
 				self.moveToEntity(
-					target.id, monster_ai.CHASE_VELOCITY, monster_ai.ATTACK_RANGE * 0.9, None, True, False
+					target.id, monster_ai.CHASE_VELOCITY * self.aiSpeedScale,
+					monster_ai.ATTACK_RANGE * 0.9, None, True, False
 				)
 		elif action == "attack":
 			if target is not None:
@@ -196,5 +218,5 @@ class Monster(Avatar):
 				evidenceLog(msg)
 		elif action == "return":
 			if not self.aiMoving:
-				self._moveToPoint(self.aiHomePos, monster_ai.MOVE_VELOCITY)
+				self._moveToPoint(self.aiHomePos, monster_ai.MOVE_VELOCITY * self.aiSpeedScale)
 		# idle/hold:不动

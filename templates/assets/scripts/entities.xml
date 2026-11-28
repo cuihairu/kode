@@ -24,6 +24,8 @@
 	<Talisman hasBase="true"></Talisman>
 	<!-- Pet (DEMO-GAME-017): base+cell companion (follow + assist). -->
 	<Pet hasBase="true" hasCell="true"></Pet>
+	<!-- Formation (DEMO-GAME-018): base+cell formation ring. -->
+	<Formation hasBase="true" hasCell="true"></Formation>
 	<Trade hasBase="true"></Trade>
 	<Mall hasBase="true"></Mall>
 	<Party hasBase="true"></Party>

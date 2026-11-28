@@ -431,6 +431,11 @@
 			<Arg> UINT8 </Arg>
 			<Arg> UINT32 </Arg>
 		</onBountyResult>
+		<!-- Formation (DEMO-GAME-018): placement ack (kind + formation id). -->
+		<onFormationPlaced>
+			<Arg> STRING </Arg>
+			<Arg> UINT32 </Arg>
+		</onFormationPlaced>
 	</ClientMethods>
 
 	<BaseMethods>
@@ -691,6 +696,12 @@
 		<reqClaimVipReward>
 			<Exposed> true </Exposed>
 		</reqClaimVipReward>
+		<!-- Formation (DEMO-GAME-018): place a ring at the caster's feet;
+		     kind is validated against cultivation.FORMATION_TYPES. -->
+		<reqPlaceFormation>
+			<Exposed> true </Exposed>
+			<Arg> STRING </Arg>
+		</reqPlaceFormation>
 	</BaseMethods>
 
 	<CellMethods>
