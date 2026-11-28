@@ -75,6 +75,24 @@
 			<Flags> BASE_AND_CLIENT </Flags>
 			<Persistent> true </Persistent>
 		</friendList>
+		<!-- Flying mounts roster (DEMO-GAME-050): persistent; ridingId =
+		     current mount (0 = on foot) syncs to the client by property
+		     update; flySpeed feeds cell movement while mounted. -->
+		<rides>
+			<Type> RIDES </Type>
+			<Flags> BASE </Flags>
+			<Persistent> true </Persistent>
+		</rides>
+		<ridingId>
+			<Type> UINT16 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> 0 </Default>
+		</ridingId>
+		<flySpeed>
+			<Type> UINT16 </Type>
+			<Flags> CELL_PUBLIC </Flags>
+			<Default> 0 </Default>
+		</flySpeed>
 	</Properties>
 
 	<!-- 组件声明:引擎 loadComponents 逐条装载,组件 def 在 components/ 子目录 -->
@@ -243,6 +261,15 @@
 			<Exposed> true </Exposed>
 			<Arg> UINT8 </Arg>
 		</reqSetLootMode>
+		<!-- Flying mounts (DEMO-GAME-050): rideId indexes the rides
+		     roster; reqRideOff unmounts (ridingId back to 0). -->
+		<reqRideOn>
+			<Exposed> true </Exposed>
+			<Arg> UINT16 </Arg>
+		</reqRideOn>
+		<reqRideOff>
+			<Exposed> true </Exposed>
+		</reqRideOff>
 	</BaseMethods>
 
 	<CellMethods>

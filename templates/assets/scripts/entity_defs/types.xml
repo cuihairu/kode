@@ -270,4 +270,29 @@
 		<of> PARTY_INFO </of>
 	</PARTY_INFOS>
 
+	<!-- Flying mounts / sword-riding (DEMO-GAME-050, 2026-11-28 user
+	     order): kind 0 = flying sword (yu jian), 1 = other craft. -->
+	<RIDE_INFO>
+		FIXED_DICT
+		<Properties>
+			<rideId>
+				<Type> UINT16 </Type>
+			</rideId>
+			<name>
+				<Type> STRING </Type>
+			</name>
+			<kind>
+				<Type> UINT8 </Type>
+			</kind>
+			<speed>
+				<Type> UINT16 </Type>
+			</speed>
+		</Properties>
+	</RIDE_INFO>
+
+	<RIDES>
+		ARRAY
+		<of> RIDE_INFO </of>
+	</RIDES>
+
 </root>

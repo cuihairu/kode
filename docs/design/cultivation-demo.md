@@ -39,6 +39,7 @@
 | 商城 | 货目持久化,灵石购买 | `Mall`(base-only)+`MALL_GOODS`+reqBuyGoods | 本战役 047 |
 | 宝石 | 装备嵌宝石,合成加成 | `GEM_INFO`+Equipment gems 孔位(随 015) | 本战役 048 |
 | 副本组队 | 组队/副本实例/掉落分配/开始全员同意 | `Party`(base-only)+Space 实例化(spaceKind)+lootMode | 本战役 049 |
+| 飞行器 | 御剑飞行(kind=0 飞剑)+其他飞行器,名册+当前坐骑+飞行速度 | `RIDE_INFO`+rides 名册+ridingId/flySpeed | 本战役 050 |
 | 客户端 | Godot 实现,**只展示数值和对象**(轻量面板) | `templates/godot-client`(GDScript TCP) | 本战役 027-029 |
 | 无头验收 | bots 全回路(登录→建角→杀怪→修炼→穿戴→用符→召宠→布阵→入宗) | bots 脚本+demo-evidence 锚 | 本战役 023 |
 
