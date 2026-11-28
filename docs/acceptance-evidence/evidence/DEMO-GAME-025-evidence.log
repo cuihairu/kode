@@ -1,0 +1,62 @@
+DEMO-GAME-025 acceptance evidence: kode export chain on the real machine (SEM-016 face)
+Date: 2026-11-28  Machine: Linux 192.168.5.188 (kode workspace + demo DB both local)
+Repo: /home/cui/workspaces/kode
+
+== Reproduce (opt-in driver, committed as tests/demoExportRealChain.test.ts)
+KODE_DEMO25_EVIDENCE=/tmp/kode-demo25-evidence.log \
+KODE_DEMO25_DB_HOST=127.0.0.1 KODE_DEMO25_DB_PORT=3306 \
+KODE_DEMO25_DB_USER=kbe KODE_DEMO25_DB_PASSWORD=kbe_2026_demo KODE_DEMO25_DB_NAME=kode_demo \
+npx vitest run tests/demoExportRealChain.test.ts   # 4 passed; no env = 4 skipped (unit gate hermetic)
+
+== Chain driven (the exact backend path behind kbengine.clone.export)
+materialize: loadDemoGameTemplateEntries(templates/assets) -> real project tree in tmpdir
+  (same entries the kbengine.project.createDemoGame command writes; Avatar.def landed)
+def->tables: getDatabaseSchemaSnapshot('Avatar', <project>) -> 13 tables (tbl_Avatar + 12 child,
+  incl two-level tbl_Avatar_bag -> tbl_Avatar_bag_items)
+probe:       probePhysicalTables vs information_schema on the real kode_demo DB (MariaDB 11.8.6 local)
+plan:        planCloneExport -> Rust RPC $/kode/dbClone/planExport vs packaged bin/kode-server
+export:      executeExportPlan (SET TRANSACTION READ ONLY + consistent snapshot, streaming, root-id
+  filter WHERE id = ? / parent-id per child) -> 4 typed rows for dbid=1
+archive:     writeCloneArchive -> avatar-export.kdpclone (Rust) -> inspectCloneArchive
+  (entity=Avatar rows=4) -> readCloneArchiveRows (4 rows back, byte-faithful)
+
+== Real values exported (dbid=1 = bot2004, matches the 024 terminal state)
+[demo25] dbid=1 plan queries:
+[demo25]   0 tbl_Avatar <- ROOT filter=root-id cols=40 sql=SELECT `id`, `sm_autoLoad`, `sm_0_position`, `sm_1_position`, `sm_2_position`, `sm_0_direction`, `sm_1_direction`, `sm_2_direction`, `sm_name`, `sm_level`, `sm_experience`, `sm_realm`, `sm_spiritRoots_metal`, `sm_spiritRoots_wood`, `sm_spiritRoots_water`, `sm_spiritRoots_fire`, `sm_spiritRoots_earth`, `sm_attrs_maxHp`, `sm_attrs_attack`, `sm_attrs_defense`, `sm_attrs_qi`, `sm_curTitle`, `sm_partnerDbid`, `sm_partnerName`, `sm_appearance_faceId`, `sm_appearance_hairId`, `sm_appearance_hairColorId`, `sm_appearance_eyeColorId`, `sm_appearance_bodyId`, `sm_curCostume`, `sm_path`, `sm_bodyLevel`, `sm_reincarnations`, `sm_rankPoints`, `sm_firstRechargeDone`, `sm_monthlyCardUntil`, `sm_vipLevel`, `sm_race`, `sm_sectId`, `sm_sectName` FROM `tbl_Avatar` WHERE `id` = ?
+[demo25]   1 tbl_Avatar_skillSlots <- tbl_Avatar filter=parent-id cols=4 sql=SELECT `id`, `parentID`, `sm_autoLoad`, `sm_count` FROM `tbl_Avatar_skillSlots` WHERE `parentID` = ?
+[demo25]   2 tbl_Avatar_skillSlots_slot_list <- tbl_Avatar_skillSlots filter=parent-id cols=4 sql=SELECT `id`, `parentID`, `sm_autoLoad`, `sm_value` FROM `tbl_Avatar_skillSlots_slot_list` WHERE `parentID` = ?
+[demo25]   3 tbl_Avatar_friendList <- tbl_Avatar filter=parent-id cols=7 sql=SELECT `id`, `parentID`, `sm_autoLoad`, `sm_dbid`, `sm_name`, `sm_realm`, `sm_online` FROM `tbl_Avatar_friendList` WHERE `parentID` = ?
+[demo25]   4 tbl_Avatar_rides <- tbl_Avatar filter=parent-id cols=7 sql=SELECT `id`, `parentID`, `sm_autoLoad`, `sm_rideId`, `sm_name`, `sm_kind`, `sm_speed` FROM `tbl_Avatar_rides` WHERE `parentID` = ?
+[demo25]   5 tbl_Avatar_titleList <- tbl_Avatar filter=parent-id cols=4 sql=SELECT `id`, `parentID`, `sm_autoLoad`, `sm_value` FROM `tbl_Avatar_titleList` WHERE `parentID` = ?
+[demo25]   6 tbl_Avatar_costumeList <- tbl_Avatar filter=parent-id cols=4 sql=SELECT `id`, `parentID`, `sm_autoLoad`, `sm_value` FROM `tbl_Avatar_costumeList` WHERE `parentID` = ?
+[demo25]   7 tbl_Avatar_equipDepot <- tbl_Avatar filter=parent-id cols=5 sql=SELECT `id`, `parentID`, `sm_autoLoad`, `sm_dbid`, `sm_strengthen` FROM `tbl_Avatar_equipDepot` WHERE `parentID` = ?
+[demo25]   8 tbl_Avatar_mercList <- tbl_Avatar filter=parent-id cols=6 sql=SELECT `id`, `parentID`, `sm_autoLoad`, `sm_mercId`, `sm_name`, `sm_realm` FROM `tbl_Avatar_mercList` WHERE `parentID` = ?
+[demo25]   9 tbl_Avatar_equipSlots <- tbl_Avatar filter=parent-id cols=5 sql=SELECT `id`, `parentID`, `sm_autoLoad`, `sm_dbid`, `sm_strengthen` FROM `tbl_Avatar_equipSlots` WHERE `parentID` = ?
+[demo25]   10 tbl_Avatar_petList <- tbl_Avatar filter=parent-id cols=6 sql=SELECT `id`, `parentID`, `sm_autoLoad`, `sm_dbid`, `sm_name`, `sm_realm` FROM `tbl_Avatar_petList` WHERE `parentID` = ?
+[demo25]   11 tbl_Avatar_bag <- tbl_Avatar filter=parent-id cols=4 sql=SELECT `id`, `parentID`, `sm_autoLoad`, `sm_gold` FROM `tbl_Avatar_bag` WHERE `parentID` = ?
+[demo25]   12 tbl_Avatar_bag_items <- tbl_Avatar_bag filter=parent-id cols=5 sql=SELECT `id`, `parentID`, `sm_autoLoad`, `sm_itemId`, `sm_count` FROM `tbl_Avatar_bag_items` WHERE `parentID` = ?
+[demo25] rows=4
+[demo25] tbl_Avatar row: id=1(big-u-int) sm_autoLoad=1(int) sm_0_position=0(double) sm_1_position=0(double) sm_2_position=0(double) sm_0_direction=0(double) sm_1_direction=0(double) sm_2_direction=0(double) sm_name="bot2004"(text) sm_level=7(u-int) sm_experience=320(u-int) sm_realm=2(u-int) sm_spiritRoots_metal=10(u-int) sm_spiritRoots_wood=57(u-int) sm_spiritRoots_water=11(u-int) sm_spiritRoots_fire=11(u-int) sm_spiritRoots_earth=11(u-int) sm_attrs_maxHp=0(u-int) sm_attrs_attack=0(u-int) sm_attrs_defense=0(u-int) sm_attrs_qi=0(u-int) sm_curTitle=0(u-int) sm_partnerDbid=0(big-u-int) sm_partnerName=""(text) sm_appearance_faceId=0(u-int) sm_appearance_hairId=0(u-int) sm_appearance_hairColorId=0(u-int) sm_appearance_eyeColorId=0(u-int) sm_appearance_bodyId=0(u-int) sm_curCostume=0(u-int) sm_path=0(u-int) sm_bodyLevel=0(u-int) sm_reincarnations=0(u-int) sm_rankPoints=0(u-int) sm_firstRechargeDone=0(u-int) sm_monthlyCardUntil=0(u-int) sm_vipLevel=0(u-int) sm_race=1(u-int) sm_sectId=1(big-u-int) sm_sectName="sect-demo"(text)
+[demo25] archive meta: entity=Avatar rows=4 tables=tbl_Avatar:1 tbl_Avatar_bag:1 tbl_Avatar_bag_items:1 tbl_Avatar_petList:1
+[demo25] missing-table face: physical probe resolved 13/15 (excluded: t_account, tbl_GhostEntity)
+[demo25] missing-table face: plan has 13 queries (no query for absent tables); plan.missing=[]; no error raised
+[demo25] t_account face: tables like %account% = tbl_Account_avatars, kbe_accountinfos, tbl_Account; no t_account
+
+== SEM-016 verdict faces (real machine)
+1. Missing-table behavior: probe resolved 13/15 (t_account, tbl_GhostEntity silently excluded --
+  information_schema miss = continue, playerDataCloneMysql.ts probePhysicalTables); the plan has 13
+  queries and NO query references an absent table; plan.missing=[] (exclusion happens at probe, the
+  planner never sees absent names); NO error and no "table not found" message anywhere in the chain.
+  => kode cannot be the origin of a "找不到 t_account" error: the name is filtered before any SQL
+  is planned, and the engine's own account table is kbe_accountinfos (KBE_TABLE_PERFIX "kbe",
+  entity_table.h:37; kode entity prefix DB_TABLE_PREFIX tbl_).
+2. t_account reality: SHOW-like over information_schema returns tbl_Account, tbl_Account_avatars,
+  kbe_accountinfos -- no t_account. Repo-wide literal check (src+crates, TS+Rust): 0 hits
+  (re-verified 2026-11-28; the 2026-11-18 code-face conclusion stands on the machine).
+3. Remaining SEM-016 suspects (user-side origin: MySQL error text relayed / historical table in the
+  user's own DB / another tool) -- still awaiting the user's exact error text; this acceptance proves
+  the kode side silent-exclude behavior live.
+
+== 64-bit/binary fidelity
+ids typed big-u-int (id=1 big-u-int; parentID chain preserved across child tables); text/binary
+columns typed (sm_name="bot2004" text); consistent-snapshot transaction wraps the whole export.
