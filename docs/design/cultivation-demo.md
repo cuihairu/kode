@@ -40,6 +40,13 @@
 | 宝石 | 装备嵌宝石,合成加成 | `GEM_INFO`+Equipment gems 孔位(随 015) | 本战役 048 |
 | 副本组队 | 组队/副本实例/掉落分配/开始全员同意 | `Party`(base-only)+Space 实例化(spaceKind)+lootMode | 本战役 049 |
 | 飞行器 | 御剑飞行(kind=0 飞剑)+其他飞行器,名册+当前坐骑+飞行速度 | `RIDE_INFO`+rides 名册+ridingId/flySpeed | 本战役 050 |
+| 称号 | 称号收集+佩戴(成就/境界里程碑发放) | `titleList ARRAY<UINT16>`+curTitle+reqWearTitle | 本战役 051 |
+| 道侣 | 求聘(近距)/接受-拒绝,双方互指持久化 | partnerDbid/partnerName+reqDaoProposal(CELL 距离闸) | 本战役 052 |
+| 捏脸 | 建角外观自定义,旁人可见 | `APPEARANCE` FIXED_DICT+appearance(ALL_CLIENTS) | 本战役 053 |
+| 时装 | 时装收集+穿着,旁人可见 | costumeList+curCostume+reqWearCostume | 本战役 054 |
+| 修行流派 | 剑修/体修/魔修/阵法师/御兽师特点表+强化肉身(淬体) | path+bodyLevel+reqChoosePath/reqTemperBody | 本战役 055 |
+| 轮回 | 被击杀即死亡→进轮回流(确认→结算→计数→新身) | reincarnations 计数+onReincarnateStart+reqReincarnate | 本战役 056 |
+| 夺舍 | 魂迁入他人身体,可避轮回;原身死亡 | seizedByDbid+reqSeizeBody(CELL 闸)+onBodySeized/onSeizeResult | 本战役 057 |
 | 客户端 | Godot 实现,**只展示数值和对象**(轻量面板) | `templates/godot-client`(GDScript TCP) | 本战役 027-029 |
 | 无头验收 | bots 全回路(登录→建角→杀怪→修炼→穿戴→用符→召宠→布阵→入宗) | bots 脚本+demo-evidence 锚 | 本战役 023 |
 

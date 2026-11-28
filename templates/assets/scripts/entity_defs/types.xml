@@ -295,4 +295,27 @@
 		<of> RIDE_INFO </of>
 	</RIDES>
 
+	<!-- Face customization (DEMO-GAME-053, 2026-11-28 user order): ids
+	     index the client-side DemoConsts appearance tables. -->
+	<APPEARANCE>
+		FIXED_DICT
+		<Properties>
+			<faceId>
+				<Type> UINT8 </Type>
+			</faceId>
+			<hairId>
+				<Type> UINT8 </Type>
+			</hairId>
+			<hairColorId>
+				<Type> UINT8 </Type>
+			</hairColorId>
+			<eyeColorId>
+				<Type> UINT8 </Type>
+			</eyeColorId>
+			<bodyId>
+				<Type> UINT8 </Type>
+			</bodyId>
+		</Properties>
+	</APPEARANCE>
+
 </root>

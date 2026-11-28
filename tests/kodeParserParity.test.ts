@@ -463,8 +463,16 @@ describe('kode-parser 与 TS defParser fixture 对拍(PR-005)', () => {
     const avatar = corpus.find(f => f.file.endsWith('kbengine-demo-assets/scripts/entity_defs/Avatar.def'));
     expect(avatar).toBeDefined();
     const record = avatar!.record as { properties: Array<{ name: string; type: string | null; flags: string[]; detailLevel: string | null }>; clientMethods: unknown[]; baseMethods: Array<{ name: string; exposed: boolean }> };
-    // DEMO-GAME-011 修士属性面:realm/spiritRoots/attrs 插在 experience 之后
-    expect(record.properties.map(p => p.name)).toEqual(['name', 'level', 'hp', 'experience', 'realm', 'spiritRoots', 'attrs', 'sight', 'skillSlots']);
+    // DEMO-GAME-011 修士属性面:realm/spiritRoots/attrs 插在 experience 之后;
+    // DEMO-GAME-044..057 社交/玩法面按用户令依次追加(见 templates Avatar.def)。
+    expect(record.properties.map(p => p.name)).toEqual([
+      'name', 'level', 'hp', 'experience', 'realm', 'spiritRoots', 'attrs',
+      'sight', 'skillSlots', 'friendList', 'rides', 'ridingId', 'flySpeed',
+      'titleList', 'curTitle', 'partnerDbid', 'partnerName',
+      'pendingProposerDbid', 'pendingProposerName', 'appearance',
+      'costumeList', 'curCostume', 'path', 'bodyLevel', 'reincarnations',
+      'seizedByDbid',
+    ]);
     expect(record.properties.find(p => p.name === 'sight')!.detailLevel).toBe('MEDIUM');
     expect(record.properties.find(p => p.name === 'hp')!.flags).toEqual(['ALL_CLIENTS']);
     expect(record.baseMethods.find(m => m.name === 'reqCastSkill')!.exposed).toBe(true);

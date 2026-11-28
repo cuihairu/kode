@@ -93,6 +93,109 @@
 			<Flags> CELL_PUBLIC </Flags>
 			<Default> 0 </Default>
 		</flySpeed>
+		<!-- Titles (DEMO-GAME-051): earned ids (names resolve client-side
+		     from the DemoConsts table); curTitle = displayed one (0 = none). -->
+		<titleList>
+			<Type>
+				ARRAY
+				<of> UINT16 </of>
+			</Type>
+			<Flags> BASE </Flags>
+			<Persistent> true </Persistent>
+		</titleList>
+		<curTitle>
+			<Type> UINT16 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> 0 </Default>
+			<Persistent> true </Persistent>
+		</curTitle>
+		<!-- Dao companion (DEMO-GAME-052): partner persisted; pending
+		     proposal state is base-only and NOT persisted (a proposal
+		     dies with the process). -->
+		<partnerDbid>
+			<Type> UINT64 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> 0 </Default>
+			<Persistent> true </Persistent>
+		</partnerDbid>
+		<partnerName>
+			<Type> STRING </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> </Default>
+			<Persistent> true </Persistent>
+			<DatabaseLength> 64 </DatabaseLength>
+		</partnerName>
+		<pendingProposerDbid>
+			<Type> UINT64 </Type>
+			<Flags> BASE </Flags>
+			<Default> 0 </Default>
+		</pendingProposerDbid>
+		<pendingProposerName>
+			<Type> STRING </Type>
+			<Flags> BASE </Flags>
+			<Default> </Default>
+			<DatabaseLength> 64 </DatabaseLength>
+		</pendingProposerName>
+		<!-- Character appearance (DEMO-GAME-053): face/hair/eye slots set
+		     at creation (or salon re-set); ALL_CLIENTS so nearby players
+		     see the customized face, persistent across restarts. -->
+		<appearance>
+			<Type> APPEARANCE </Type>
+			<Flags> ALL_CLIENTS </Flags>
+			<Persistent> true </Persistent>
+		</appearance>
+		<!-- Fashion / costumes (DEMO-GAME-054): owned ids persisted;
+		     curCostume = worn one (0 = none), ALL_CLIENTS so nearby
+		     players see it too. -->
+		<costumeList>
+			<Type>
+				ARRAY
+				<of> UINT16 </of>
+			</Type>
+			<Flags> BASE </Flags>
+			<Persistent> true </Persistent>
+		</costumeList>
+		<curCostume>
+			<Type> UINT16 </Type>
+			<Flags> ALL_CLIENTS </Flags>
+			<Default> 0 </Default>
+			<Persistent> true </Persistent>
+		</curCostume>
+		<!-- Cultivation paths (DEMO-GAME-055): 1=sword 2=body 3=demonic
+		     4=formation master 5=beast tamer (0 = none chosen). Per-path
+		     trait table lives on the pure-function face; bodyLevel =
+		     flesh tempering stage (body path core mechanic). -->
+		<path>
+			<Type> UINT8 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> 0 </Default>
+			<Persistent> true </Persistent>
+		</path>
+		<bodyLevel>
+			<Type> UINT8 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> 0 </Default>
+			<Persistent> true </Persistent>
+		</bodyLevel>
+		<!-- Reincarnation (DEMO-GAME-056): being killed ends this body —
+		     death sends the cultivator into the samsara flow (client
+		     picks up via onReincarnateStart); the run counter persists,
+		     keep/lose settlement happens on the base face. -->
+		<reincarnations>
+			<Type> UINT32 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> 0 </Default>
+			<Persistent> true </Persistent>
+		</reincarnations>
+		<!-- Body seizing (DEMO-GAME-057): another soul can seize this
+		     body (duo she); seizedByDbid marks the occupying soul
+		     (0 = own soul). Not persisted: a seizure ends with the
+		     process or when the victim reincarnates. -->
+		<seizedByDbid>
+			<Type> UINT64 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> 0 </Default>
+		</seizedByDbid>
 	</Properties>
 
 	<!-- 组件声明:引擎 loadComponents 逐条装载,组件 def 在 components/ 子目录 -->
@@ -166,6 +269,41 @@
 		<onDungeonReady>
 			<Arg> UINT32 </Arg>
 		</onDungeonReady>
+		<!-- Titles (DEMO-GAME-051): server push when a new title is
+		     earned; wearing state itself syncs via curTitle updates. -->
+		<onTitleGained>
+			<Arg> UINT16 </Arg>
+		</onTitleGained>
+		<!-- Dao companion (DEMO-GAME-052): incoming proposal push; the
+		     proposer learns the outcome through onDaoPartnerReply. -->
+		<onDaoProposal>
+			<Arg> UINT64 </Arg>
+			<Arg> STRING </Arg>
+		</onDaoProposal>
+		<onDaoPartnerReply>
+			<Arg> UINT8 </Arg>
+		</onDaoPartnerReply>
+		<!-- Fashion (DEMO-GAME-054): server push when a costume is
+		     gained; wearing state syncs via curCostume updates. -->
+		<onCostumeGained>
+			<Arg> UINT16 </Arg>
+		</onCostumeGained>
+		<!-- Reincarnation (DEMO-GAME-056): death pushes the client into
+		     the samsara flow; arg = upcoming run number (1 = first
+		     reincarnation). Settlement lands as property updates. -->
+		<onReincarnateStart>
+			<Arg> UINT32 </Arg>
+		</onReincarnateStart>
+		<!-- Body seizing (DEMO-GAME-057): victim is told whose soul
+		     took over (dbid + name); attacker gets onSeizeResult
+		     (1 = success, 0 = refused). -->
+		<onBodySeized>
+			<Arg> UINT64 </Arg>
+			<Arg> STRING </Arg>
+		</onBodySeized>
+		<onSeizeResult>
+			<Arg> UINT8 </Arg>
+		</onSeizeResult>
 	</ClientMethods>
 
 	<BaseMethods>
@@ -270,6 +408,46 @@
 		<reqRideOff>
 			<Exposed> true </Exposed>
 		</reqRideOff>
+		<!-- Titles (DEMO-GAME-051): wear one from titleList (0 = none);
+		     gaining happens server-side (realm milestones, achievements). -->
+		<reqWearTitle>
+			<Exposed> true </Exposed>
+			<Arg> UINT16 </Arg>
+		</reqWearTitle>
+		<!-- Dao companion (DEMO-GAME-052): reply to a pending proposal
+		     (pendingProposerDbid); 1 = accept, 0 = decline. -->
+		<reqDaoPartnerReply>
+			<Exposed> true </Exposed>
+			<Arg> UINT8 </Arg>
+		</reqDaoPartnerReply>
+		<!-- Fashion (DEMO-GAME-054): wear one from costumeList (0 = none). -->
+		<reqWearCostume>
+			<Exposed> true </Exposed>
+			<Arg> UINT16 </Arg>
+		</reqWearCostume>
+		<!-- Appearance (DEMO-GAME-053): creation-time face customization;
+		     salon re-set goes through the same entry. -->
+		<reqSetAppearance>
+			<Exposed> true </Exposed>
+			<Arg> APPEARANCE </Arg>
+		</reqSetAppearance>
+		<!-- Paths (DEMO-GAME-055): choose a cultivation path; per-path
+		     trait application is implementation face. -->
+		<reqChoosePath>
+			<Exposed> true </Exposed>
+			<Arg> UINT8 </Arg>
+		</reqChoosePath>
+		<!-- Body tempering (DEMO-GAME-055): flesh strengthening entry;
+		     cost + success roll on base, bodyLevel grows on success. -->
+		<reqTemperBody>
+			<Exposed> true </Exposed>
+		</reqTemperBody>
+		<!-- Reincarnation (DEMO-GAME-056): client consent step of the
+		     samsara flow; applies the keep/lose settlement, bumps
+		     reincarnations, then respawns the body. -->
+		<reqReincarnate>
+			<Exposed> true </Exposed>
+		</reqReincarnate>
 	</BaseMethods>
 
 	<CellMethods>
@@ -295,6 +473,20 @@
 			<Exposed> true </Exposed>
 			<Arg> UINT32 </Arg>
 		</reqTradeInvite>
+		<!-- Dao companion proposal (DEMO-GAME-052): distance gate lives
+		     HERE on the cell face (entitiesInRange), same as trade
+		     invite; target = in-view entity id, relay goes base to base. -->
+		<reqDaoProposal>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+		</reqDaoProposal>
+		<!-- Body seize (DEMO-GAME-057): distance + realm gate lives on
+		     the cell face; target = in-view entity id. Success migrates
+		     the attacker soul in and kills the attacker old body. -->
+		<reqSeizeBody>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+		</reqSeizeBody>
 	</CellMethods>
 
 </root>
