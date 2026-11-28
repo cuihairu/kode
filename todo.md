@@ -3265,5 +3265,10 @@ MCP 面此前只有「二进制在位」三可见态(已构建/未构建/已关�
 - [ ] DEMO-GAME-060 [P1] 装备库(2026-11-28 用户令「装备库,移除 飞行器 技能 翅膀 宠物 装备图鉴 宠物图鉴 奇物榜 奇宠榜」):纯装备寄存库=只收装备,飞行器/技能/翅膀/宠物/两类图鉴/两类榜明确不入库范围(不移除既有 017 宠物/039 技能/050 飞行器系统本体);Avatar equipDepot ARRAY<EQUIP_SLOT>(BASE+Persistent)+reqDepotDeposit/reqDepotWithdraw(Exposed Arg UINT64 equipDbid);容量上限+存取走 Item/Equipment 面贯通(014/015);真机锚存入名册变化+取出回背包+重启还在
 - [ ] DEMO-GAME-061 [P1] 悬赏(2026-11-28 用户令「悬赏系统,有人出悬赏可以接,完成之后可以拿奖励」):reqPostBounty(Exposed desc+reward,发布即托管奖励)+reqAcceptBounty/reqTurnInBounty(Exposed bountyId);Avatar acceptedBountyId(BASE_AND_CLIENT,0=未接);onBountyPosted(全服广播 bountyId+posterName+desc+reward)+onBountyResult(Arg UINT8,Arg UINT32);Bounty 实体(base-only 持久化:def 随实现批落,同 Mall 判例);完成判据=击杀/收集目标实现批定;真机锚发布托管+接单+交付拿奖励+悬赏完成即下架
 - [ ] DEMO-GAME-062 [P1] 佣兵(2026-11-28 用户令「佣兵系统」):MERC_INFO{mercId,name,realm}+MERCS;Avatar mercList ARRAY<MERC_INFO>(BASE+Persistent 名册)+hiredMercId(UINT16 BASE_AND_CLIENT 当前出战,0=无);reqHireMerc/reqDismissMerc(Exposed Arg UINT16)+reqSummonMerc(Exposed);佣兵=模板定义表(DemoConsts),召唤=佣兵实体入 cell 协战(随 017 宠物实体面同构);真机锚雇用扣费入名册+召唤协战+遣散移除+重启名册还在
+(def 面载体 28926b58)
+- [ ] DEMO-GAME-063 [P1] 货运战争/护送(2026-11-28 用户令「有货运战争 护送之类的任务」):护送目标任务=Task 面(034)扩展:货运单/护送目标(NPC/车载实体随 035 Npc 面)+途中可被劫(货运战争=PvP 劫镖对撞)+送达结算奖励;劫掠对抗复用 cell 攻击路径(012 乘数);def 增量随实现批落(同 Mall 判例);真机锚接单→护送送达得奖励+被劫失败掉货
+- [ ] DEMO-GAME-064 [P1] 迷宫乱斗(2026-11-28 用户令「迷宫乱斗」):迷宫空间实例(spaceKind=3,复用 049 Party/Space kit:每场一例)+乱斗=多队/个人混战(cell Exposed 攻击面既有)+存活结算排名发奖;迷宫地图生成=实现批定;真机锚进本混战+淘汰结算+名次奖励
+- [ ] DEMO-GAME-065 [P1] 挑战玩法组(2026-11-28 用户令「挑战玩法有 世界boss 遗迹 暗域 远征 试炼 等」):五模式同 kit 异参:世界boss=全服定时刷 world space 伤害排名结算;遗迹/暗域/远征/试炼=空间实例(spaceKind 4..7,难度递增,门票/次数门槛实现批定)+首通/排行奖励;def 增量随实现批落(同 Mall 判例);真机锚各模式进本+结算奖励+世界boss 全服伤害榜
+- [ ] DEMO-GAME-066 [P1] 成就系统图(2026-11-28 用户令「还有成就系统图」):成就=里程碑事件解锁(境界/击杀/社交/玩法通达)+图鉴面(客户端按解锁列表渲染收集进度);Avatar achList ARRAY<UINT16>(BASE+Persistent,已解锁 id 表)+onAchievementUnlocked(Arg UINT16 定向 push);成就联动称号(051:部分成就发称号)+奖励面(灵石/物品);def 增量随实现批落;真机锚达标解锁推送+图鉴列表持久化
 
 已完成本日前置(载体 01c8dd7a):templates/demo-game→templates/assets 改名(全部引用收编,vitest 67/67+python 3 门绿);templates/kbe 引擎源树入仓(137M,排除 .a/.o 构建产物,.vscodeignore 排 VSIX)。
