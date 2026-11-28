@@ -26,6 +26,8 @@
 	<Pet hasBase="true" hasCell="true"></Pet>
 	<!-- Formation (DEMO-GAME-018): base+cell formation ring. -->
 	<Formation hasBase="true" hasCell="true"></Formation>
+	<!-- Sect (DEMO-GAME-019): base-only persistent roster entity. -->
+	<Sect hasBase="true"></Sect>
 	<Trade hasBase="true"></Trade>
 	<Mall hasBase="true"></Mall>
 	<Party hasBase="true"></Party>

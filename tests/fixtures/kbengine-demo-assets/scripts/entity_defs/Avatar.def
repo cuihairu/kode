@@ -298,6 +298,19 @@
 			<Flags> BASE_AND_CLIENT </Flags>
 			<Persistent> true </Persistent>
 		</petList>
+		<!-- Sect membership (DEMO-GAME-019): 0/"" = no sect. -->
+		<sectId>
+			<Type> UINT64 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> 0 </Default>
+			<Persistent> true </Persistent>
+		</sectId>
+		<sectName>
+			<Type> STRING </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Persistent> true </Persistent>
+			<DatabaseLength> 64 </DatabaseLength>
+		</sectName>
 	</Properties>
 
 	<!-- 组件声明:引擎 loadComponents 逐条装载,组件 def 在 components/ 子目录 -->
@@ -436,6 +449,12 @@
 			<Arg> STRING </Arg>
 			<Arg> UINT32 </Arg>
 		</onFormationPlaced>
+		<!-- Sect channel (DEMO-GAME-019): relayed by the Sect base entity
+		     to every loaded member's client. -->
+		<onSectChat>
+			<Arg> STRING </Arg>
+			<Arg> STRING </Arg>
+		</onSectChat>
 	</ClientMethods>
 
 	<BaseMethods>
@@ -702,6 +721,24 @@
 			<Exposed> true </Exposed>
 			<Arg> STRING </Arg>
 		</reqPlaceFormation>
+		<!-- Sect (DEMO-GAME-019): found (unique name + gold escrow), join
+		     by sect dbid, leave (leader transfer / disband on empty), and
+		     the sect channel. Rank/dept management lands with 033. -->
+		<reqCreateSect>
+			<Exposed> true </Exposed>
+			<Arg> STRING </Arg>
+		</reqCreateSect>
+		<reqJoinSect>
+			<Exposed> true </Exposed>
+			<Arg> UINT64 </Arg>
+		</reqJoinSect>
+		<reqLeaveSect>
+			<Exposed> true </Exposed>
+		</reqLeaveSect>
+		<reqSectChat>
+			<Exposed> true </Exposed>
+			<Arg> STRING </Arg>
+		</reqSectChat>
 	</BaseMethods>
 
 	<CellMethods>

@@ -1,0 +1,25 @@
+<root>
+	<!-- Sect 宗门(DEMO-GAME-019):base-only 持久化实体。名册 members
+	     ARRAY<of> MEMBER_INFO Persistent→真子表 tbl_Sect_members(FD 键
+	     平铺 sm_dbid/sm_name/sm_realm/sm_rank/sm_dept,skillSlots 判例);
+	     宗名唯一在 reqCreateSect 面卡(全机已载宗门线性扫,demo 规模);
+	     职位/权限/部门(033)复用 MEMBER_INFO.rank/dept 字段。 -->
+	<Properties>
+		<name>
+			<Type> STRING </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Persistent> true </Persistent>
+			<DatabaseLength> 64 </DatabaseLength>
+		</name>
+		<leaderDbid>
+			<Type> UINT64 </Type>
+			<Flags> BASE </Flags>
+			<Persistent> true </Persistent>
+		</leaderDbid>
+		<members>
+			<Type> ARRAY <of> MEMBER_INFO </of> </Type>
+			<Flags> BASE </Flags>
+			<Persistent> true </Persistent>
+		</members>
+	</Properties>
+</root>

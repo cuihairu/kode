@@ -14,12 +14,14 @@ from DemoConsts import DEMO_BAG_CAPACITY, DEMO_LEVEL_UP_STEP, DEMO_RESPAWN_DELAY
 from Spaces import spaceByIndex
 
 TIMER_RESPAWN = 1
+TIMER_FORMATION_PLACE = 2
 
 
 class Avatar(KBEngine.Proxy):
 	def __init__(self):
 		KBEngine.Proxy.__init__(self)
 		self.lastAttackAt = 0.0
+		self._pendingFormations = []
 		INFO_MSG("Avatar[%i] created, name=%s" % (self.id, self.name))
 		msg = "Avatar[%i] created, name=%s -> enterSpace(%i)" % (self.id, self.name, DEMO_SPACE_INDEX)
 		print("[demo-evidence] %s" % msg, flush=True)
@@ -88,12 +90,191 @@ class Avatar(KBEngine.Proxy):
 		"""
 		KBEngine method.(基座计时器:重生回调)
 		"""
+		if userArg == TIMER_FORMATION_PLACE:
+			self._flushPendingFormations()
+			return
 		if userArg != TIMER_RESPAWN:
 			return
 		msg = "Avatar[%i] RESPAWN -> enterSpace(%i) (fresh cell, full hp)" % (self.id, DEMO_SPACE_INDEX)
 		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		self.enterSpace(DEMO_SPACE_INDEX)
+
+	def _flushPendingFormations(self):
+		"""Deferred placement queue (Space spawn convention: cell creation
+		never nested inside a creation flow)."""
+		pending, self._pendingFormations = self._pendingFormations, []
+		space = spaceByIndex.get(DEMO_SPACE_INDEX)
+		for f in pending:
+			if f is None or f.isDestroyed:
+				continue
+			if space is None or space.cell is None:
+				ERROR_MSG("Avatar[%i].reqPlaceFormation: space not ready" % self.id)
+				continue
+			f.createCellEntity(space.cell)
+			msg = "Avatar[%i] PLACE FORMATION kind=%s id=%i owner=%i at (%.1f,%.1f)" % (
+				self.id, f.kind, f.id, self.dbid,
+				f.cellData["position"][0], f.cellData["position"][2],
+			)
+			print("[demo-evidence] %s" % msg, flush=True)
+			evidenceLog(msg)
+			if self.client is not None:
+				self.client.onFormationPlaced(f.kind, f.id)
+
+	def reqPlaceFormation(self, kind):
+		"""
+		Exposed.(DEMO-GAME-018: place a formation ring at the caster's feet;
+		gather heals, bind slows) Spawn position rides cellData["position"]
+		(BASEAPP streams cell position from cellData, entity_macro.h).
+		"""
+		if kind not in cultivation.FORMATION_TYPES:
+			kind = "gather"
+		f = KBEngine.createEntityLocally("Formation", {
+			"kind": kind,
+			"ownerId": self.dbid,
+			"ownerEntityId": self.id,
+		})
+		if f is None:
+			ERROR_MSG("Avatar[%i].reqPlaceFormation: create Formation failed" % self.id)
+			return
+		f.cellData["position"] = (self.position.x, self.position.y, self.position.z)
+		self._pendingFormations.append(f)
+		self.addTimer(0.1, 0, TIMER_FORMATION_PLACE)
+	# ---- Sect (DEMO-GAME-019) ----
+
+	def _findSect(self, sectDbid):
+		return next((e for e in KBEngine.entities.values()
+			if getattr(e, "className", "") == "Sect" and e.dbid == sectDbid), None)
+
+	def _memberInfo(self):
+		return {
+			"dbid": self.dbid,
+			"name": self.name,
+			"realm": self.realm,
+			"rank": 0,
+			"dept": 0,
+		}
+
+	def reqCreateSect(self, name):
+		"""
+		Exposed.(DEMO-GAME-019 建宗:宗名唯一→建 Sect 实体→写库→名册登记)
+		建宗金币闸(SECT_CREATE_COST_GOLD)随经济批收口,demo 先零费。
+		"""
+		name = (name or "").strip()
+		if not name:
+			DEBUG_MSG("Avatar[%i].reqCreateSect: empty name" % self.id)
+			return
+		if getattr(self, "sectId", 0):
+			DEBUG_MSG("Avatar[%i].reqCreateSect: already in sect %i" % (self.id, self.sectId))
+			return
+		if self._findSectByName(name) is not None:
+			DEBUG_MSG("Avatar[%i].reqCreateSect: name taken %s" % (self.id, name))
+			return
+		def onSaved(success, sect):
+			if not success or sect is None:
+				ERROR_MSG("Avatar[%i].reqCreateSect: writeToDB failed name=%s" % (self.id, name))
+				return
+			sect.members = [self._memberInfo()]
+			self.sectId = sect.dbid
+			self.sectName = sect.name
+			msg = "Avatar[%i] SECT FOUNDED dbid=%i name=%s leader=%i" % (
+				self.id, sect.dbid, sect.name, self.dbid)
+			print("[demo-evidence] %s" % msg, flush=True)
+			evidenceLog(msg)
+			sect.writeToDB()
+		sect = KBEngine.createEntityLocally("Sect", {
+			"name": name,
+			"leaderDbid": self.dbid,
+			"members": [],
+		})
+		if sect is None:
+			ERROR_MSG("Avatar[%i].reqCreateSect: create Sect failed" % self.id)
+			return
+		sect.writeToDB(onSaved)
+
+	def _findSectByName(self, name):
+		return next((e for e in KBEngine.entities.values()
+			if getattr(e, "className", "") == "Sect" and e.name == name), None)
+
+	def reqJoinSect(self, sectDbid):
+		"""
+		Exposed.(DEMO-GAME-019 入宗:按 dbid,本机已载复用,否则 createEntityFromDB)
+		"""
+		if getattr(self, "sectId", 0):
+			DEBUG_MSG("Avatar[%i].reqJoinSect: already in sect %i" % (self.id, self.sectId))
+			return
+
+		def join(sect):
+			if sect is None:
+				ERROR_MSG("Avatar[%i].reqJoinSect: sect %i not found" % (self.id, sectDbid))
+				return
+			if sect.full() or sect.hasMember(self.dbid):
+				DEBUG_MSG("Avatar[%i].reqJoinSect: sect full or already member" % self.id)
+				return
+			sect.addMember(self._memberInfo())
+			self.sectId = sect.dbid
+			self.sectName = sect.name
+			sect.writeToDB()
+			msg = "Avatar[%i] SECT JOIN dbid=%i name=%s members=%i" % (
+				self.id, sect.dbid, sect.name, len(sect.members))
+			print("[demo-evidence] %s" % msg, flush=True)
+			evidenceLog(msg)
+
+		sect = self._findSect(sectDbid)
+		if sect is not None:
+			join(sect)
+			return
+
+		def onLoaded(success, sect):
+			join(sect if success else None)
+		KBEngine.createEntityFromDB(sectDbid, onLoaded)
+
+	def reqLeaveSect(self):
+		"""
+		Exposed.(DEMO-GAME-019 离宗:盟主离宗让位;空宗解散删档)
+		"""
+		sectDbid = getattr(self, "sectId", 0)
+		if not sectDbid:
+			DEBUG_MSG("Avatar[%i].reqLeaveSect: no sect" % self.id)
+			return
+		sect = self._findSect(sectDbid)
+		if sect is None:
+			ERROR_MSG("Avatar[%i].reqLeaveSect: sect %i not loaded" % (self.id, sectDbid))
+			return
+		sect.removeMember(self.dbid)
+		self.sectId = 0
+		self.sectName = ""
+		if not len(sect.members):
+			sectName = sect.name
+			sect.deleteFromDB()
+			sect.destroy()
+			msg = "Avatar[%i] SECT DISBAND dbid=%i name=%s (empty)" % (
+				self.id, sectDbid, sectName)
+			print("[demo-evidence] %s" % msg, flush=True)
+			evidenceLog(msg)
+			return
+		if sect.leaderDbid == self.dbid:
+			sect.leaderDbid = sect.members[0]["dbid"]
+			msg = "Sect[%i] LEADER TRANSFER -> %i" % (sectDbid, sect.leaderDbid)
+			print("[demo-evidence] %s" % msg, flush=True)
+			evidenceLog(msg)
+		sect.writeToDB()
+		msg = "Avatar[%i] SECT LEAVE dbid=%i members=%i" % (
+			self.id, sectDbid, len(sect.members))
+		print("[demo-evidence] %s" % msg, flush=True)
+		evidenceLog(msg)
+
+	def reqSectChat(self, text):
+		"""
+		Exposed.(DEMO-GAME-019 宗门频道:经 Sect 基座广播给全体已载成员)
+		"""
+		sectDbid = getattr(self, "sectId", 0)
+		if not sectDbid:
+			return
+		sect = self._findSect(sectDbid)
+		if sect is None:
+			return
+		sect.broadcast(self.name, text)
 
 	def cellAddExperience(self, xp):
 		"""
