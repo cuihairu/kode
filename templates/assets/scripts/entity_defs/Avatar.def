@@ -64,6 +64,17 @@
 			<Flags> BASE </Flags>
 			<Persistent> true </Persistent>
 		</skillSlots>
+		<!-- Friends roster (DEMO-GAME-045): BASE_AND_CLIENT so the client
+		     reads the roster through property sync; persistent across
+		     restarts. -->
+		<friendList>
+			<Type>
+				ARRAY
+				<of> FRIEND_INFO </of>
+			</Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Persistent> true </Persistent>
+		</friendList>
 	</Properties>
 
 	<!-- 组件声明:引擎 loadComponents 逐条装载,组件 def 在 components/ 子目录 -->
@@ -104,6 +115,39 @@
 			<Arg> FLOAT </Arg>
 			<Arg> UINT32 </Arg>
 		</onMonsterNear>
+		<!-- Social / trade / mall / party faces (DEMO-GAME-044..049):
+		     server -> client pushes. Requests go through the Exposed
+		     base/cell methods below. -->
+		<onChatMessage>
+			<Arg> CHAT_MSG </Arg>
+		</onChatMessage>
+		<onBuyResult>
+			<Arg> UINT8 </Arg>
+			<Arg> UINT32 </Arg>
+		</onBuyResult>
+		<onTradeInvite>
+			<Arg> UINT64 </Arg>
+			<Arg> STRING </Arg>
+			<Arg> UINT32 </Arg>
+		</onTradeInvite>
+		<onTradeEvent>
+			<Arg> UINT32 </Arg>
+			<Arg> UINT8 </Arg>
+		</onTradeEvent>
+		<onPartyInvite>
+			<Arg> UINT64 </Arg>
+			<Arg> STRING </Arg>
+			<Arg> UINT32 </Arg>
+		</onPartyInvite>
+		<onPartyRoster>
+			<Arg> PARTY_INFOS </Arg>
+		</onPartyRoster>
+		<onPartyStartVote>
+			<Arg> UINT32 </Arg>
+		</onPartyStartVote>
+		<onDungeonReady>
+			<Arg> UINT32 </Arg>
+		</onDungeonReady>
 	</ClientMethods>
 
 	<BaseMethods>
@@ -124,6 +168,81 @@
 			<Arg> FLOAT </Arg>
 			<Arg> UINT32 </Arg>
 		</onRadarPush>
+		<!-- Chat (DEMO-GAME-044): channel 0=world 1=sect 2=private.
+		     Routing to sect members / private target happens on base. -->
+		<reqChatMessage>
+			<Exposed> true </Exposed>
+			<Arg> UINT8 </Arg>
+			<Arg> STRING </Arg>
+		</reqChatMessage>
+		<!-- Friends (DEMO-GAME-045): demo-scale roster addressed by name. -->
+		<reqAddFriend>
+			<Exposed> true </Exposed>
+			<Arg> STRING </Arg>
+		</reqAddFriend>
+		<reqDelFriend>
+			<Exposed> true </Exposed>
+			<Arg> STRING </Arg>
+		</reqDelFriend>
+		<!-- Face-to-face trade (DEMO-GAME-046): tradeId = Trade entity id.
+		     Distance was gated at invite time on the cell face. -->
+		<reqTradeReply>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+			<Arg> UINT8 </Arg>
+		</reqTradeReply>
+		<reqTradeSetOffer>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+			<Arg> TRADE_OFFERS </Arg>
+		</reqTradeSetOffer>
+		<reqTradeLock>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+		</reqTradeLock>
+		<reqTradeConfirm>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+		</reqTradeConfirm>
+		<reqTradeCancel>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+		</reqTradeCancel>
+		<!-- Mall (DEMO-GAME-047): goodsId indexes the Mall catalog. -->
+		<reqBuyGoods>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+		</reqBuyGoods>
+		<!-- Party + dungeon (DEMO-GAME-049): partyId = Party entity id. -->
+		<reqCreateParty>
+			<Exposed> true </Exposed>
+		</reqCreateParty>
+		<reqPartyInvite>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+		</reqPartyInvite>
+		<reqPartyReply>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+			<Arg> UINT8 </Arg>
+		</reqPartyReply>
+		<reqPartyLeave>
+			<Exposed> true </Exposed>
+		</reqPartyLeave>
+		<!-- leader only: kicks off the per-member consent vote -->
+		<reqPartyStart>
+			<Exposed> true </Exposed>
+		</reqPartyStart>
+		<reqPartyStartReply>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+			<Arg> UINT8 </Arg>
+		</reqPartyStartReply>
+		<!-- leader only: 0=round robin, 1=leader assign, 2=free for all -->
+		<reqSetLootMode>
+			<Exposed> true </Exposed>
+			<Arg> UINT8 </Arg>
+		</reqSetLootMode>
 	</BaseMethods>
 
 	<CellMethods>
@@ -142,6 +261,13 @@
 			<Exposed> true </Exposed>
 			<Arg> UINT32 </Arg>
 		</reqAttack>
+		<!-- Face-to-face trade invite (DEMO-GAME-046): the distance gate
+		     lives HERE on the cell face (entitiesInRange); target = in-view
+		     entity id. -->
+		<reqTradeInvite>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+		</reqTradeInvite>
 	</CellMethods>
 
 </root>

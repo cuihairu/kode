@@ -152,4 +152,122 @@
 		</Properties>
 	</MEMBER_INFO>
 
+	<!-- Social / trade / mall / gem types (DEMO-GAME-044..048, 2026-11-28
+	     user orders). Single-pass loader: everything below only references
+	     names declared earlier in this file (ITEM_ID), no forward refs. -->
+	<FRIEND_INFO>
+		FIXED_DICT
+		<Properties>
+			<dbid>
+				<Type> UINT64 </Type>
+			</dbid>
+			<name>
+				<Type> STRING </Type>
+			</name>
+			<realm>
+				<Type> UINT8 </Type>
+			</realm>
+			<online>
+				<Type> UINT8 </Type>
+			</online>
+		</Properties>
+	</FRIEND_INFO>
+
+	<TRADE_OFFER>
+		FIXED_DICT
+		<Properties>
+			<itemId>
+				<Type> ITEM_ID </Type>
+			</itemId>
+			<count>
+				<Type> UINT16 </Type>
+			</count>
+		</Properties>
+	</TRADE_OFFER>
+
+	<TRADE_OFFERS>
+		ARRAY
+		<of> TRADE_OFFER </of>
+	</TRADE_OFFERS>
+
+	<CHAT_MSG>
+		FIXED_DICT
+		<Properties>
+			<channel>
+				<Type> UINT8 </Type>
+			</channel>
+			<senderDbid>
+				<Type> UINT64 </Type>
+			</senderDbid>
+			<senderName>
+				<Type> STRING </Type>
+			</senderName>
+			<content>
+				<Type> STRING </Type>
+			</content>
+		</Properties>
+	</CHAT_MSG>
+
+	<MALL_GOODS>
+		FIXED_DICT
+		<Properties>
+			<goodsId>
+				<Type> UINT32 </Type>
+			</goodsId>
+			<itemId>
+				<Type> ITEM_ID </Type>
+			</itemId>
+			<price>
+				<Type> UINT32 </Type>
+			</price>
+			<stock>
+				<Type> UINT32 </Type>
+			</stock>
+		</Properties>
+	</MALL_GOODS>
+
+	<GEM_INFO>
+		FIXED_DICT
+		<Properties>
+			<gemId>
+				<Type> UINT16 </Type>
+			</gemId>
+			<level>
+				<Type> UINT8 </Type>
+			</level>
+			<attrType>
+				<Type> UINT8 </Type>
+			</attrType>
+			<attrValue>
+				<Type> UINT32 </Type>
+			</attrValue>
+		</Properties>
+	</GEM_INFO>
+
+	<PARTY_INFO>
+		FIXED_DICT
+		<Properties>
+			<dbid>
+				<Type> UINT64 </Type>
+			</dbid>
+			<name>
+				<Type> STRING </Type>
+			</name>
+			<realm>
+				<Type> UINT8 </Type>
+			</realm>
+			<role>
+				<Type> UINT8 </Type>
+			</role>
+			<ready>
+				<Type> UINT8 </Type>
+			</ready>
+		</Properties>
+	</PARTY_INFO>
+
+	<PARTY_INFOS>
+		ARRAY
+		<of> PARTY_INFO </of>
+	</PARTY_INFOS>
+
 </root>

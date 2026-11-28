@@ -33,6 +33,12 @@
 | 排行榜 | Redis 榜(等级/战力,sorted set) | redis 连接面+双榜 | 本战役 041 |
 | 跨服 | 必须有一种跨服玩法(双服务组互通) | 机制考证后落跨服演武/Boss | 本战役 036 |
 | 合服 | 双服务组数据并组(ID 冲突/宗门名冲突) | 合服 DB 工具+验收 | 本战役 042 |
+| 聊天 | 世界/宗门/私聊三频道,防刷屏 | `CHAT_MSG`+reqChatMessage(Exposed)+定向推送 | 本战役 044 |
+| 好友 | 名册持久化+在线位 | `friendList ARRAY<FRIEND_INFO>` 属性同步 | 本战役 045 |
+| 交易 | **面对面**交易:距离闸+报价/锁定/双确认 | `Trade`(base-only 非持久化会话)+cell 面距离校验 | 本战役 046 |
+| 商城 | 货目持久化,灵石购买 | `Mall`(base-only)+`MALL_GOODS`+reqBuyGoods | 本战役 047 |
+| 宝石 | 装备嵌宝石,合成加成 | `GEM_INFO`+Equipment gems 孔位(随 015) | 本战役 048 |
+| 副本组队 | 组队/副本实例/掉落分配/开始全员同意 | `Party`(base-only)+Space 实例化(spaceKind)+lootMode | 本战役 049 |
 | 客户端 | Godot 实现,**只展示数值和对象**(轻量面板) | `templates/godot-client`(GDScript TCP) | 本战役 027-029 |
 | 无头验收 | bots 全回路(登录→建角→杀怪→修炼→穿戴→用符→召宠→布阵→入宗) | bots 脚本+demo-evidence 锚 | 本战役 023 |
 
@@ -53,6 +59,7 @@
 | Persistent/DatabaseLength/Index 索引列 | 全实体持久化+accountName 上 Index | 本战役 011/020 |
 | Flags 全谱(BASE/CLIENT/BASE_AND_CLIENT/ALL_CLIENTS/CELL_PUBLIC/OWN_CLIENT) | 各实体散布+OWN_CLIENT 补例 | 已有+020 补 |
 | Exposed 方法 | reqAttack 等(已有)+新系统入口 | 已有+扩展 |
+| 定向 ClientMethod 推送(base→指定 client) | 宗门频道/私聊/交易事件/组队名册 | 本战役 044/046/049 |
 | DetailLevels | Avatar NEAR/MEDIUM/FAR(已有) | 已有 |
 | writeToDB/readFromDB 往返+deleteFromDB 位 | 修士/宠物/宗门/容器/邮件 | 本战役 024 |
 | account_system(loginAutoCreate) | 登录建号(已有) | 已有 |

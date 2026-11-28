@@ -6,5 +6,19 @@
 			<Type> UINT32 </Type>
 			<Flags> BASE </Flags>
 		</spaceIndex>
+		<!-- Dungeon instance support (DEMO-GAME-049): 0=world space,
+		     1=party dungeon instance. Dungeon spaces are created per
+		     party (one Space cell per instance). -->
+		<spaceKind>
+			<Type> UINT8 </Type>
+			<Flags> BASE </Flags>
+			<Default> 0 </Default>
+		</spaceKind>
+		<!-- owning party id for dungeon instances (0 = world space) -->
+		<partyId>
+			<Type> UINT32 </Type>
+			<Flags> BASE </Flags>
+			<Default> 0 </Default>
+		</partyId>
 	</Properties>
 </root>

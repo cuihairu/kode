@@ -12,4 +12,9 @@
 	<Space hasBase="true" hasCell="true"></Space>
 	<Avatar hasBase="true" hasCell="true" hasClient="true"></Avatar>
 	<Monster hasCell="true"></Monster>
+	<!-- Social / trade / mall / party (DEMO-GAME-046/047/049):
+	     transient base-only session + catalog entities. -->
+	<Trade hasBase="true"></Trade>
+	<Mall hasBase="true"></Mall>
+	<Party hasBase="true"></Party>
 </root>
