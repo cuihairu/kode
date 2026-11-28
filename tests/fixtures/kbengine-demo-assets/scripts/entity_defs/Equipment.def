@@ -1,0 +1,55 @@
+<root>
+	<!-- Equipment 装备(DEMO-GAME-015):Parent=Item,脚本镜像继承
+	     base/Equipment.py(Item)同 Monster(Avatar) 惯例。穿戴位/强化等/
+	     属性加成/宝石孔(048)全持久化;名称由 itemId 客户端表解。 -->
+	<Parent> Item </Parent>
+
+	<Properties>
+		<slot>
+			<Type> STRING </Type>
+			<Flags> BASE </Flags>
+			<Default> weapon </Default>
+			<Persistent> true </Persistent>
+			<DatabaseLength> 16 </DatabaseLength>
+		</slot>
+		<strengthen>
+			<Type> UINT8 </Type>
+			<Flags> BASE </Flags>
+			<Default> 0 </Default>
+			<Persistent> true </Persistent>
+		</strengthen>
+		<realmReq>
+			<Type> UINT8 </Type>
+			<Flags> BASE </Flags>
+			<Default> 0 </Default>
+			<Persistent> true </Persistent>
+		</realmReq>
+		<!-- Catalog bonus at forge time; synthesis adds strengthen (and
+		     gems later, 048) on the avatar base face. -->
+		<bonus>
+			<Type> ATTRS </Type>
+			<Flags> BASE </Flags>
+			<Persistent> true </Persistent>
+		</bonus>
+		<!-- Gem sockets (DEMO-GAME-048): cap DEMO_GEM_SLOTS on base. -->
+		<gems>
+			<Type>
+				ARRAY
+				<of> GEM_INFO </of>
+			</Type>
+			<Flags> BASE </Flags>
+			<Persistent> true </Persistent>
+		</gems>
+	</Properties>
+
+	<BaseMethods>
+		<!-- Internal face: avatar base forwards gem requests here; the
+		     entry is built from GEM_CATALOG on the avatar face. -->
+		<onSocketGem>
+			<Arg> GEM_INFO </Arg>
+		</onSocketGem>
+		<onUnsocketGem>
+			<Arg> UINT8 </Arg>
+		</onUnsocketGem>
+	</BaseMethods>
+</root>

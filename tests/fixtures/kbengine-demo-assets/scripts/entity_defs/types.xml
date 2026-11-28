@@ -152,6 +152,21 @@
 		</Properties>
 	</MEMBER_INFO>
 
+	<!-- DEMO-GAME-024: character roster entry persisted on Account so a
+	     re-login can select an existing avatar by name and load it back
+	     from the DB via createEntityFromDBID (round-trip acceptance). -->
+	<AVATAR_INFO>
+		FIXED_DICT
+		<Properties>
+			<name>
+				<Type> STRING </Type>
+			</name>
+			<dbid>
+				<Type> UINT64 </Type>
+			</dbid>
+		</Properties>
+	</AVATAR_INFO>
+
 	<!-- Social / trade / mall / gem types (DEMO-GAME-044..048, 2026-11-28
 	     user orders). Single-pass loader: everything below only references
 	     names declared earlier in this file (ITEM_ID), no forward refs. -->

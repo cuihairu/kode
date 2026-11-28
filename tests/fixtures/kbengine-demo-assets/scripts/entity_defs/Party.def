@@ -1,0 +1,59 @@
+<root>
+	<!-- Party + dungeon session (DEMO-GAME-049). Base-only, NOT persistent:
+	     a transient session entity per party; the dungeon itself is a
+	     dedicated Space instance (spaceKind=1, created per party) so
+	     restarts dissolve parties by design. Loot splitting rule is a
+	     party property; start requires every member's consent vote. -->
+	<Properties>
+		<leaderDbid>
+			<Type> UINT64 </Type>
+			<Flags> BASE </Flags>
+		</leaderDbid>
+		<leaderName>
+			<Type> STRING </Type>
+			<Flags> BASE </Flags>
+			<DatabaseLength> 64 </DatabaseLength>
+		</leaderName>
+		<!-- 0=forming, 1=start vote in progress, 2=dungeon running -->
+		<state>
+			<Type> UINT8 </Type>
+			<Flags> BASE </Flags>
+			<Default> 0 </Default>
+		</state>
+		<!-- 0=round robin, 1=leader assign, 2=free for all -->
+		<lootMode>
+			<Type> UINT8 </Type>
+			<Flags> BASE </Flags>
+			<Default> 0 </Default>
+		</lootMode>
+		<members>
+			<Type> PARTY_INFOS </Type>
+			<Flags> BASE </Flags>
+		</members>
+		<!-- dungeon Space instance id once created (0 = none yet) -->
+		<dungeonSpaceId>
+			<Type> UINT32 </Type>
+			<Flags> BASE </Flags>
+			<Default> 0 </Default>
+		</dungeonSpaceId>
+	</Properties>
+
+	<BaseMethods>
+		<onPartyReply>
+			<Arg> UINT64 </Arg>
+			<Arg> UINT8 </Arg>
+		</onPartyReply>
+		<onPartyLeave>
+			<Arg> UINT64 </Arg>
+		</onPartyLeave>
+		<onPartyStartVoteReply>
+			<Arg> UINT64 </Arg>
+			<Arg> UINT8 </Arg>
+		</onPartyStartVoteReply>
+		<onLootModeSet>
+			<Arg> UINT64 </Arg>
+			<Arg> UINT8 </Arg>
+		</onLootModeSet>
+	</BaseMethods>
+
+</root>

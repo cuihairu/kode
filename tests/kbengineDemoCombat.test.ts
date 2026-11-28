@@ -40,7 +40,10 @@ describe('DEMO-GAME-003 战斗与成长(夹具内容契约)', () => {
     expect(cell).toMatch(/def\s+reqAttack\(self,\s*targetId\)/);
     expect(cell).toMatch(/addTimer\(DEMO_ATTACK_COOLDOWN,\s*DEMO_ATTACK_COOLDOWN,\s*self\.TIMER_AUTOATTACK\)/);
     expect(cell).toMatch(/self\.entitiesInRange\(DEMO_ATTACK_RANGE,\s*"Monster"\)/);
-    expect(cell).toMatch(/target\.receiveDamage\(DEMO_AVATAR_DAMAGE,\s*self\.id\)/);
+    // DEMO-GAME-012 five-element affinity: damage = int(DEMO_AVATAR_DAMAGE * mult),
+    // the call carries the multiplied value.
+    expect(cell).toMatch(/damage\s*=\s*int\(DEMO_AVATAR_DAMAGE\s*\*\s*mult\)/);
+    expect(cell).toMatch(/target\.receiveDamage\(damage,\s*self\.id\)/);
     // cellapp 脚本无 destroyCellEntity(基座面 API),死亡只上报基座
     expect(cell).toMatch(/base = getattr\(self,\s*"base",\s*None\)[\s\S]{0,120}base\.onAvatarDead\(\)/);
     expect(cell).not.toMatch(/self\.destroyCellEntity\(\)/);

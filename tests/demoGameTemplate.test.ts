@@ -80,7 +80,16 @@ describe('demo game template loader (DEMO-GAME-006)', () => {
 
   it('excludes the navigation-test assets: Training/Elite entities, training mixins, test harness', () => {
     const relatives = [...loadTemplateFiles().keys()];
-    const banned = ['Training', 'Elite', 'common/training/', 'navigation-cases', 'play_demo', 'README', '.vscode/'];
+    // DEMO-GAME-021: the template ships its own cultivation-demo README.md, so
+    // the ban is content-level: the fixture's navigation-test doc (navigation
+    // cases / play_demo walkthrough) must not leak into the template.
+    const banned = ['Training', 'Elite', 'common/training/', 'navigation-cases', 'play_demo', '.vscode/'];
+    for (const marker of banned) {
+      expect(relatives.some(p => p.includes(marker)), `template must not carry ${marker}`).toBe(false);
+    }
+    const templateReadme = loadTemplateFiles().get('README.md') ?? '';
+    expect(templateReadme).toContain('cultivation demo assets');
+    expect(templateReadme).not.toMatch(/navigation-cases|play_demo/);
     for (const marker of banned) {
       expect(relatives.some(p => p.includes(marker)), `template must not carry ${marker}`).toBe(false);
     }
@@ -99,6 +108,12 @@ describe('demo game template parity with the fixture (DEMO-GAME-006)', () => {
   it('every template file is byte-identical to its fixture counterpart (except trimmed entities.xml)', () => {
     for (const [relativePath, content] of loadTemplateFiles()) {
       if (relativePath === 'scripts/entities.xml') {
+        continue;
+      }
+      // DEMO-GAME-021: the template carries its own cultivation-demo README;
+      // the fixture README documents the navigation-test assets and stays
+      // fixture-only (same ledger as the materialize exclusion).
+      if (relativePath === 'README.md') {
         continue;
       }
       const fixtureBytes = fs.readFileSync(path.join(FIXTURE_ROOT, relativePath));

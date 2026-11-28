@@ -10,6 +10,14 @@
 			<Flags> BASE_AND_CLIENT </Flags>
 			<Persistent> true </Persistent>
 		</lastLoginTime>
+		<!-- DEMO-GAME-024: persistent character roster (name -> dbid); child
+		     table tbl_Account_avatars lets a re-login select an existing
+		     avatar and read it back from the DB (createEntityFromDBID). -->
+		<avatars>
+			<Type> ARRAY <of> AVATAR_INFO </of> </Type>
+			<Flags> BASE </Flags>
+			<Persistent> true </Persistent>
+		</avatars>
 	</Properties>
 
 	<ClientMethods>
@@ -24,6 +32,12 @@
 			<!-- DEMO-GAME-069: 1 = human, 2 = yao (only these two open). -->
 			<Arg> UINT8 </Arg>
 		</reqCreateAvatar>
+		<!-- DEMO-GAME-024: select a previously created avatar by name;
+		     unknown names fall through to reqCreateAvatar. -->
+		<reqSelectAvatar>
+			<Exposed> true </Exposed>
+			<Arg> STRING </Arg>
+		</reqSelectAvatar>
 	</BaseMethods>
 
 	<CellMethods>

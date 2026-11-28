@@ -1,0 +1,31 @@
+<root>
+	<!-- Item 物品实体(DEMO-GAME-014):base-only 持久化,第四种实体形态。
+	     承载位=装备库(060)/邮件附件(037);Monster 掉落已裁明直接入袋(013),
+	     不走世界拾取面。名称由 itemId 客户端表解(称号/时装同判例)。 -->
+	<Properties>
+		<itemId>
+			<Type> ITEM_ID </Type>
+			<Flags> BASE </Flags>
+			<Persistent> true </Persistent>
+		</itemId>
+		<itemType>
+			<Type> UINT8 </Type>
+			<Flags> BASE </Flags>
+			<Default> 1 </Default>
+			<Persistent> true </Persistent>
+		</itemType>
+		<count>
+			<Type> UINT16 </Type>
+			<Flags> BASE </Flags>
+			<Default> 1 </Default>
+			<Persistent> true </Persistent>
+		</count>
+		<!-- Owner avatar dbid; indexed for owner-side lookup. -->
+		<ownerDbid>
+			<Type> UINT64 </Type>
+			<Flags> BASE </Flags>
+			<Persistent> true </Persistent>
+			<Index> INDEX </Index>
+		</ownerDbid>
+	</Properties>
+</root>

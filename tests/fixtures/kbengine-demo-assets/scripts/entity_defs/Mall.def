@@ -1,0 +1,15 @@
+<root>
+	<!-- Mall 商城(DEMO-GAME-046 def 面):base-only 常驻商店实体。
+	     货目常量在 Avatar 基座消费(MALL_GOODS 经 types.xml);
+	     本实体承载购买入口与日后动态货架位;购买账面走 Avatar.reqMallBuy
+	     (046 实现批)。实体先于实现批注册(entities.xml 已引用,
+	     缺 def 文件会炸全进程 def 装载——022 真机判例)。 -->
+	<Properties>
+		<goodsRevision>
+			<Type> UINT32 </Type>
+			<Flags> BASE </Flags>
+			<Default> 0 </Default>
+			<Persistent> true </Persistent>
+		</goodsRevision>
+	</Properties>
+</root>

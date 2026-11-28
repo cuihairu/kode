@@ -167,7 +167,11 @@ do_bots() {
 	eval "$(engine_env)"
 	export KBE_ROOT KBE_RES_PATH KBE_BIN_PATH KBE_DEMO_LOG_DIR KBE_DEMO_EVIDENCE
 	cd "$RUN_DIR"
-	stdbuf -oL -eL "$KBE_BIN_PATH/bots" >"$KBE_DEMO_LOG_DIR/bots.out" 2>&1 &
+	# DEMO-GAME-024: fixed --cid pins the bots account names
+	# (bot_<cid>_<n>, create_and_login_handler.cpp) so re-boots log into
+	# the SAME accounts and the DB round-trip (reqSelectAvatar ->
+	# createEntityFromDBID) actually replays persisted avatars.
+	stdbuf -oL -eL "$KBE_BIN_PATH/bots" --cid=8129652375332859701 >"$KBE_DEMO_LOG_DIR/bots.out" 2>&1 &
 	echo "bots started (headless players; see $RUN_DIR/logs/ for onEnterSpace)"
 }
 

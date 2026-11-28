@@ -1,0 +1,63 @@
+<root>
+	<!-- Face-to-face trade session (DEMO-GAME-046). Base-only, NOT
+	     persistent: a transient session entity created per trade, dropped
+	     when the trade ends. The distance gate lives on the Avatar cell
+	     face (reqTradeInvite -> entitiesInRange); clients never own this
+	     entity, so every method below is internal and reached through
+	     Avatar base-method forwarding. -->
+	<Properties>
+		<initiatorDbid>
+			<Type> UINT64 </Type>
+			<Flags> BASE </Flags>
+		</initiatorDbid>
+		<initiatorName>
+			<Type> STRING </Type>
+			<Flags> BASE </Flags>
+			<DatabaseLength> 64 </DatabaseLength>
+		</initiatorName>
+		<acceptorDbid>
+			<Type> UINT64 </Type>
+			<Flags> BASE </Flags>
+		</acceptorDbid>
+		<acceptorName>
+			<Type> STRING </Type>
+			<Flags> BASE </Flags>
+			<DatabaseLength> 64 </DatabaseLength>
+		</acceptorName>
+		<!-- 0=offering, 1=both locked, 2=confirmed/executed -->
+		<state>
+			<Type> UINT8 </Type>
+			<Flags> BASE </Flags>
+			<Default> 0 </Default>
+		</state>
+		<initiatorOffers>
+			<Type> TRADE_OFFERS </Type>
+			<Flags> BASE </Flags>
+		</initiatorOffers>
+		<acceptorOffers>
+			<Type> TRADE_OFFERS </Type>
+			<Flags> BASE </Flags>
+		</acceptorOffers>
+	</Properties>
+
+	<BaseMethods>
+		<onTradeReply>
+			<Arg> UINT64 </Arg>
+			<Arg> UINT8 </Arg>
+		</onTradeReply>
+		<onTradeSetOffer>
+			<Arg> UINT64 </Arg>
+			<Arg> TRADE_OFFERS </Arg>
+		</onTradeSetOffer>
+		<onTradeLock>
+			<Arg> UINT64 </Arg>
+		</onTradeLock>
+		<onTradeConfirm>
+			<Arg> UINT64 </Arg>
+		</onTradeConfirm>
+		<onTradeCancel>
+			<Arg> UINT64 </Arg>
+		</onTradeCancel>
+	</BaseMethods>
+
+</root>

@@ -1,0 +1,289 @@
+DEMO-GAME-024 acceptance evidence: DB persistence round trip (writeToDB / EntityAutoLoader / createEntityFromDBID)
+Date: 2026-11-28  Machine: Linux 192.168.5.188 (engine + DB both local LAN)
+Repo: /home/cui/workspaces/kode  Assets: templates/assets/scripts (synced to tests/fixtures/kbengine-demo-assets)
+
+== Environment
+Engine: ~/workspaces/kbengine fork binaries (kbe/bin/server), 9 processes + bots.
+Boot A (fresh DB): scripts/run-demo-engine.sh start   -> reset_database() DROPs+CREATEs kode_demo (default KBE_DEMO_DB_RESET=1).
+Boot B (keep DB):  KBE_DEMO_DB_RESET=0 scripts/run-demo-engine.sh start  (reset_database skipped; the 023/024 data survives).
+  ^ 023 finding, re-proven here: plain 'start' always resets the DB; KBE_DEMO_DB_RESET=0 is mandatory for round-trip boots.
+Bots: scripts/run-demo-engine.sh bots  -- now pins --cid=8129652375332859701 so account names
+  (bot_<cid>_<n>, create_and_login_handler.cpp) are stable across boots.
+
+== DB capture note
+The 192.168.5.5 alias on this machine dropped right after the run (connection refused, host still pings);
+kode_demo actually lives in the LOCAL MariaDB. Post-stop capture was taken via local socket (sudo mysql).
+Row counts and per-row values match the Run B terminal snapshot field-for-field (see terminal state below).
+
+== Sequence
+Run A (boot A, fresh DB): 10 bots register+login, reqSelectAvatar('') roster-miss -> reqCreateAvatar x10,
+  avatar.writeToDB(_onNewAvatarSaved, 1)  # shouldAutoLoad=1
+  anchors: ROSTER REGISTERED=10, REALM UP=14, SECT CHAT=38, SECT JOIN=7, SELECT AVATAR(create branch)=10
+Stop (pkill engine binaries). DB kept.
+Run B (boot B, kept DB): EntityAutoLoader restores all 10 avatars BEFORE bots connect:
+  baseapp.out: "Avatar[2005] created, name=bot2006" x10 (boot-time autoload restore)
+  bots login -> reqSelectAvatar('') -> roster present but createEntityFromDBID path superseded by the
+  idle-restored-avatar rebind branch -> 10/10 "REBOUND RESTORED AVATAR" with realm/exp/sectId equal to Run A values.
+  anchors: REBOUND RESTORED=10, REALM UP=5 (continuation from restored exp), SECT CHAT=2, SECT JOIN=3 (+1 founder)
+
+== Snapshots (sudo mysql, in-flight)
+-- Run A terminal (snapshotA3):
+id	sm_name	sm_experience	sm_realm	sm_sectId
+1	bot2004	320	2	1
+2	bot2007	300	2	1
+3	bot2009	340	2	1
+4	bot2008	320	2	1
+5	bot2006	340	2	1
+6	bot2003	0	0	0
+7	bot2010	0	0	0
+8	bot2005	120	1	0
+9	bot2012	140	1	0
+10	bot2011	310	2	1
+roster
+10
+pets
+8
+sect_members
+8
+talismans
+8
+-- Run B terminal (snapshotB):
+id	sm_name	sm_experience	sm_realm	sm_sectId
+1	bot2004	320	2	1
+2	bot2007	300	2	1
+3	bot2009	340	2	1
+4	bot2008	320	2	1
+5	bot2006	340	2	1
+6	bot2003	330	2	2
+7	bot2010	120	1	0
+8	bot2005	310	2	0
+9	bot2012	310	2	0
+10	bot2011	310	2	1
+pets
+12
+sect_members
+12
+talismans
+12
+
+== DB terminal state (post-stop, authoritative)
+id	sm_autoLoad	sm_name	sm_realm	sm_experience	sm_sectId	sm_sectName
+1	1	bot2004	2	320	1	sect-demo
+2	1	bot2007	2	300	1	sect-demo
+3	1	bot2009	2	340	1	sect-demo
+4	1	bot2008	2	320	1	sect-demo
+5	1	bot2006	2	340	1	sect-demo
+6	1	bot2003	2	330	2	sect-demo
+7	1	bot2010	1	120	0	
+8	1	bot2005	2	310	0	
+9	1	bot2012	2	310	0	
+10	1	bot2011	2	310	1	sect-demo
+-- sm_autoLoad=1 on 10/10 rows: writeToDB(callback, shouldAutoLoad=1) landed (entity_macro.h pyWriteToDB "O|i").
+-- bot2003 (dbid=6) sectId=2: join-or-founded a SECOND sect-demo after reboot (sect base entities are not
+   autoloaded, so the unique-name gate found no in-memory sect and allowed the second founding; sect id 2
+   leaderDbid=6 = bot2003). Demo-scale behavior, recorded honestly.
+id	sm_name	sm_leaderDbid
+1	sect-demo	1
+2	sect-demo	6
+sm_name	sm_dbid
+bot2004	1
+bot2009	3
+bot2007	2
+bot2008	4
+bot2003	6
+bot2006	5
+bot2010	7
+bot2012	9
+bot2005	8
+bot2011	10
+-- tbl_Account_avatars (ARRAY child table): 10 roster rows name->dbid survived the restart.
+-- child-table counts: pets 8->12, sect_members 8->12, talismans 8->12 (the 4 sect-less restored avatars
+   re-ran adopt/forge/join on their run-B first breakthrough -- join-or-found by design; no data loss).
+
+== dbmgr column-type mapping (ARCH-001 face; SHOW COLUMNS, local socket)
+Field	Type	Null	Key	Default	Extra
+id	bigint(20) unsigned	NO	PRI	NULL	auto_increment
+sm_autoLoad	tinyint(4)	NO	MUL	0	
+sm_name	varchar(64)	NO	MUL		
+sm_level	int(10) unsigned	NO		0	
+sm_experience	int(10) unsigned	NO		0	
+sm_realm	tinyint(3) unsigned	NO		0	
+sm_spiritRoots_metal	tinyint(3) unsigned	NO		0	
+sm_spiritRoots_wood	tinyint(3) unsigned	NO		0	
+sm_spiritRoots_water	tinyint(3) unsigned	NO		0	
+sm_spiritRoots_fire	tinyint(3) unsigned	NO		0	
+sm_spiritRoots_earth	tinyint(3) unsigned	NO		0	
+sm_attrs_maxHp	int(10) unsigned	NO		0	
+sm_attrs_attack	int(10) unsigned	NO		0	
+sm_attrs_defense	int(10) unsigned	NO		0	
+sm_attrs_qi	int(10) unsigned	NO		0	
+sm_curTitle	smallint(5) unsigned	NO		0	
+sm_partnerDbid	bigint(20) unsigned	NO		0	
+sm_partnerName	varchar(64)	NO			
+sm_appearance_faceId	tinyint(3) unsigned	NO		0	
+sm_appearance_hairId	tinyint(3) unsigned	NO		0	
+sm_appearance_hairColorId	tinyint(3) unsigned	NO		0	
+sm_appearance_eyeColorId	tinyint(3) unsigned	NO		0	
+sm_appearance_bodyId	tinyint(3) unsigned	NO		0	
+sm_curCostume	smallint(5) unsigned	NO		0	
+sm_path	tinyint(3) unsigned	NO		0	
+sm_bodyLevel	tinyint(3) unsigned	NO		0	
+sm_reincarnations	int(10) unsigned	NO		0	
+sm_rankPoints	int(10) unsigned	NO		0	
+sm_firstRechargeDone	tinyint(3) unsigned	NO		0	
+sm_monthlyCardUntil	int(10) unsigned	NO		0	
+sm_vipLevel	tinyint(3) unsigned	NO		0	
+sm_race	tinyint(3) unsigned	NO		1	
+sm_sectId	bigint(20) unsigned	NO		0	
+sm_sectName	varchar(64)	NO			
+sm_0_position	float	NO		0	
+sm_1_position	float	NO		0	
+sm_2_position	float	NO		0	
+sm_0_direction	float	NO		0	
+sm_1_direction	float	NO		0	
+sm_2_direction	float	NO		0	
+Field	Type	Null	Key	Default	Extra
+id	bigint(20) unsigned	NO	PRI	NULL	auto_increment
+sm_autoLoad	tinyint(4)	NO	MUL	0	
+sm_lastLoginTime	int(10) unsigned	NO		0	
+Field	Type	Null	Key	Default	Extra
+id	bigint(20) unsigned	NO	PRI	NULL	auto_increment
+parentID	bigint(20) unsigned	NO	MUL	NULL	
+sm_autoLoad	tinyint(4)	NO	MUL	0	
+sm_name	varchar(255)	NO			
+sm_dbid	bigint(20) unsigned	NO		0	
+Field	Type	Null	Key	Default	Extra
+id	bigint(20) unsigned	NO	PRI	NULL	auto_increment
+sm_autoLoad	tinyint(4)	NO	MUL	0	
+sm_name	varchar(64)	NO			
+sm_realm	tinyint(3) unsigned	NO		1	
+sm_ownerDbid	bigint(20) unsigned	NO	MUL	0	
+sm_0_position	float	NO		0	
+sm_1_position	float	NO		0	
+sm_2_position	float	NO		0	
+sm_0_direction	float	NO		0	
+sm_1_direction	float	NO		0	
+sm_2_direction	float	NO		0	
+Field	Type	Null	Key	Default	Extra
+id	bigint(20) unsigned	NO	PRI	NULL	auto_increment
+sm_autoLoad	tinyint(4)	NO	MUL	0	
+sm_name	varchar(64)	NO			
+sm_leaderDbid	bigint(20) unsigned	NO		0	
+Field	Type	Null	Key	Default	Extra
+id	bigint(20) unsigned	NO	PRI	NULL	auto_increment
+parentID	bigint(20) unsigned	NO	MUL	NULL	
+sm_autoLoad	tinyint(4)	NO	MUL	0	
+sm_dbid	bigint(20) unsigned	NO		0	
+sm_name	varchar(255)	NO			
+sm_realm	tinyint(3) unsigned	NO		0	
+sm_rank	tinyint(3) unsigned	NO		0	
+sm_dept	tinyint(3) unsigned	NO		0	
+Field	Type	Null	Key	Default	Extra
+id	bigint(20) unsigned	NO	PRI	NULL	auto_increment
+sm_autoLoad	tinyint(4)	NO	MUL	0	
+sm_charges	tinyint(3) unsigned	NO		3	
+sm_power	int(10) unsigned	NO		30	
+sm_itemId	smallint(5) unsigned	NO		0	
+sm_itemType	tinyint(3) unsigned	NO		1	
+sm_count	smallint(5) unsigned	NO		1	
+sm_ownerDbid	bigint(20) unsigned	NO	MUL	0	
+
+Mapping def-type -> mysql column, confirmed by the capture above:
+  UINT8  -> tinyint(3) unsigned   (sm_realm, sm_race, sm_path, AVATAR dbid fields)
+  UINT16 -> smallint(5) unsigned  (sm_curTitle, sm_curCostume, Talisman sm_itemId)
+  UINT32 -> int(10) unsigned      (sm_level, sm_experience, sm_attrs_*, sm_lastLoginTime)
+  UINT64 -> bigint(20) unsigned   (sm_partnerDbid, sm_sectId, sm_ownerDbid, child sm_dbid)
+  STRING + DatabaseLength 64 -> varchar(64) (sm_name, sm_sectName); no DatabaseLength -> varchar(255) (child sm_name)
+  FIXED_DICT -> flattened sm_<prop>_<sub> columns (spiritRoots_metal..earth x5, appearance_faceId..bodyId x5)
+  VECTOR3 Position/Direction -> sm_0_position..sm_2_position / sm_0_direction..sm_2_direction (float x3 each)
+  ARRAY <of> T -> child table tbl_<Entity>_<prop> (id bigint PK + parentID bigint MUL + one sm_<field> column per T member)
+  Persistent=false props absent (tbl_Account has no sm_accountName column: BASE_AND_CLIENT STRING without Persistent)
+  engine-added: id bigint PK auto_increment + sm_autoLoad tinyint(4) on every base table and child row
+
+== Engine findings recorded (024 docstring chain)
+1. tbl_accountinfos.bindata only carries the registration snapshot (baseapp.cpp:4215
+   onQueryAccountCBFromDbmgr -> createDictDataFromPersistentStream); writeToDB child-table properties
+   NEVER reach the login path -> Account roster restoration via login blob is impossible.
+2. Engine-native restore channel = EntityAutoLoader (entity_autoloader.cpp): writeToDB(cb, 1) sets
+   sm_autoLoad, boot re-creates the entities (base, no client) BEFORE onBaseAppReady.
+3. Autoloaded avatars __init__ during boot, before the Spaces manager exists -> enterSpace soft-fails;
+   rebind must re-issue enterSpace(DEMO_SPACE_INDEX) when cell is None.
+4. Stable naming proved impossible on the real machine: bots client entity ids drift every boot
+   (id bases flip with app start order: bot3..bot12 vs bot2003..bot2012) and accountName is empty via
+   getattr on both the bots client entity and the base-side Proxy. Selection therefore lives server-side:
+   empty name = account roster first entry / idle restored avatar; the name is a display face only.
+5. createEntityFromDBID callback signature (baseRef, dbid, wasActive), baseRef=None on failure
+   (baseapp.cpp:435/1088); writeToDB onSaved = (success, entity) (entity.cpp:1250-1283).
+
+== Evidence logs (raw)
+Run A raw: /tmp/kode-demo-024-runA3-evidence.log (2922 lines) -> committed excerpt below
+Run B raw: /tmp/kode-demo-024-runB-evidence.log (1872 lines) -> committed excerpt below
+-- Run A: ROSTER REGISTERED x10
+[demo-evidence] Account[2004] AVATAR ROSTER REGISTERED name=bot2004 dbid=1
+[demo-evidence] Account[2007] AVATAR ROSTER REGISTERED name=bot2007 dbid=2
+[demo-evidence] Account[2009] AVATAR ROSTER REGISTERED name=bot2009 dbid=3
+[demo-evidence] Account[2008] AVATAR ROSTER REGISTERED name=bot2008 dbid=4
+[demo-evidence] Account[2006] AVATAR ROSTER REGISTERED name=bot2006 dbid=5
+[demo-evidence] Account[2003] AVATAR ROSTER REGISTERED name=bot2003 dbid=6
+[demo-evidence] Account[2010] AVATAR ROSTER REGISTERED name=bot2010 dbid=7
+[demo-evidence] Account[2005] AVATAR ROSTER REGISTERED name=bot2005 dbid=8
+[demo-evidence] Account[2012] AVATAR ROSTER REGISTERED name=bot2012 dbid=9
+[demo-evidence] Account[2011] AVATAR ROSTER REGISTERED name=bot2011 dbid=10
+-- Run B: boot autoload restore (baseapp.out x10)
+Avatar[2005] created, name=bot2006
+Avatar[2004] created, name=bot2008
+Avatar[2006] created, name=bot2003
+Avatar[2002] created, name=bot2007
+Avatar[2007] created, name=bot2010
+Avatar[2003] created, name=bot2009
+Avatar[2008] created, name=bot2005
+Avatar[2001] created, name=bot2004
+Avatar[2009] created, name=bot2012
+Avatar[2010] created, name=bot2011
+-- Run B: REBOUND RESTORED x10
+[demo-evidence] Account[2013] REBOUND RESTORED AVATAR id=2005 name=bot2006 realm=2 exp=340 sectId=1
+[demo-evidence] Account[2019] REBOUND RESTORED AVATAR id=2004 name=bot2008 realm=2 exp=320 sectId=1
+[demo-evidence] Account[2021] REBOUND RESTORED AVATAR id=2006 name=bot2003 realm=0 exp=0 sectId=0
+[demo-evidence] Account[2016] REBOUND RESTORED AVATAR id=2002 name=bot2007 realm=2 exp=300 sectId=1
+[demo-evidence] Account[2017] REBOUND RESTORED AVATAR id=2007 name=bot2010 realm=0 exp=0 sectId=0
+[demo-evidence] Account[2022] REBOUND RESTORED AVATAR id=2003 name=bot2009 realm=2 exp=340 sectId=1
+[demo-evidence] Account[2018] REBOUND RESTORED AVATAR id=2008 name=bot2005 realm=1 exp=120 sectId=0
+[demo-evidence] Account[2015] REBOUND RESTORED AVATAR id=2001 name=bot2004 realm=2 exp=320 sectId=1
+[demo-evidence] Account[2014] REBOUND RESTORED AVATAR id=2009 name=bot2012 realm=1 exp=140 sectId=0
+[demo-evidence] Account[2020] REBOUND RESTORED AVATAR id=2010 name=bot2011 realm=2 exp=310 sectId=1
+-- Run B: continuation REALM UP x5 + SECT CHAT x2
+[demo-evidence] Avatar[2006] REALM UP QiRefining->Foundation exp=110 (writeToDB)
+[demo-evidence] Avatar[2009] REALM UP Foundation->GoldenCore exp=310 (writeToDB)
+[demo-evidence] Avatar[2006] REALM UP Foundation->GoldenCore exp=330 (writeToDB)
+[demo-evidence] bots Avatar[2006] SECT CHAT from=bot2003 text=sect-demo is open, fellow cultivators
+[demo-evidence] bots Avatar[2009] SECT CHAT from=bot2003 text=sect-demo is open, fellow cultivators
+[demo-evidence] Avatar[2007] REALM UP QiRefining->Foundation exp=120 (writeToDB)
+[demo-evidence] Avatar[2008] REALM UP Foundation->GoldenCore exp=310 (writeToDB)
+-- Run B: second sect (join-or-found) SECT JOIN x3 + founder
+[demo-evidence] Avatar[2009] SECT JOIN dbid=2 name=sect-demo members=2
+[demo-evidence] Avatar[2007] SECT JOIN dbid=2 name=sect-demo members=3
+[demo-evidence] Avatar[2008] SECT JOIN dbid=2 name=sect-demo members=4
+-- end of evidence
+
+== Gate repairs carried by this batch (pre-existing reds at HEAD, not 024-caused)
+1. kbengineDemoCombat.test.ts: expected literal receiveDamage(DEMO_AVATAR_DAMAGE, ...) --
+   stale since b0b0f136c (DEMO-GAME-012 five-element affinity refactored the call to
+   damage = int(DEMO_AVATAR_DAMAGE * mult); target.receiveDamage(damage, self.id)).
+   Assertion updated to pin both faces.
+2. kbengineDemoWorld.test.ts: expected reqCreateAvatar(self, name) -- stale since
+   f4781648e (DEMO-GAME-069 race argument). Assertion updated to (self, name, race).
+3. demoGameTemplate.test.ts: banned 'README' + README byte-parity -- stale since
+   ada11d172 (DEMO-GAME-021 template ships its own cultivation-demo README).
+   Ban made content-level (navigation doc must not leak), README excluded from parity.
+4. Fixture tree lockstep (012-missed-dual-write judgment family): 021/022 batches
+   wrote template-only; synced to tests/fixtures/kbengine-demo-assets: 12x
+   log4cxx_properties/*.properties, 3x placeholder .gitignore (res/spaces,
+   scripts/data, scripts/server_common), 10x base/*.py (Equipment/Inventory/Item/
+   Mall/Monster/Party/Pet/Sect/Talisman/Trade), 2x cell/*.py (Formation/Pet),
+   9x entity_defs/*.def (Equipment/Formation/Item/Mall/Party/Pet/Sect/Talisman/Trade).
+   Post-sync tree diff: only README.md (own docs per side) and scripts/entities.xml
+   (trimmed registry, ledgered) differ.
+5. def-parity golden regenerated after the fixture sync (fileCount 39, corpus list
+   is the hardcoded spot-check roster).
+Gate result: 8 vitest files 95/95 green, cargo fixtures_golden 2/2 green,
+pytest tests/python/test_cultivation_rules.py 29/29 green.

@@ -1,0 +1,24 @@
+<root>
+	<!-- Formation 阵法(DEMO-GAME-018):base+cell。base 承载 kind/归属与
+	     时长到期自毁;cell 是静态法阵:gather 每 tick 治疗圈内修士,
+	     bind 由 Monster think 消费减速因子。半径/数值/时长规则在
+	     cultivation.FORMATION_TYPES/FORMATION_DURATION 纯函数核(008 批)。 -->
+	<Properties>
+		<kind>
+			<Type> STRING </Type>
+			<Flags> ALL_CLIENTS </Flags>
+			<Default> gather </Default>
+		</kind>
+		<ownerId>
+			<Type> UINT64 </Type>
+			<Flags> BASE </Flags>
+			<Persistent> true </Persistent>
+			<Index> INDEX </Index>
+		</ownerId>
+		<ownerEntityId>
+			<Type> UINT32 </Type>
+			<Flags> CELL_PUBLIC </Flags>
+			<Default> 0 </Default>
+		</ownerEntityId>
+	</Properties>
+</root>

@@ -1,22 +1,34 @@
 # -*- coding: utf-8 -*-
-# bots 侧的 Avatar 客户端实体(无头玩家):服务端 giveClientTo 后由 bots 进程创建。
+# Avatar client-side entity in the bots process (headless players):
+# created by the bots process once the server hands the client over
+# via giveClientTo.
 #
-# 引擎取证四点(全部真机踩出):
-# 1) bots 进程无 KBEngine.entities 模块面、客户端实体也无 self.entities
-#    (bots 只注册 "bots" 模块,bots.cpp:180;entities 描述子挂在
-#    ClientObjectBase,不在脚本 Entity 上)——客户端无法自行枚举索敌。
-# 2) bots 进程客户端实体无脚本计时器面(bots.out "assertion failed: g_pApp
-#    ... at: addTimer")——动作全由回调驱动。
-# 3) cell 侧 self.client 依赖 witness 链(cellapp/entity.cpp
-#    pyGetClientEntityCall),bots 真机恒 None——cell→client 直推死路,
-#    客户端推送须经基座中继(onRadarPush BaseMethods → base.client)。
-# 4) client_lib moveToPoint(client_lib/entity.cpp:29)调用可受理,但其
-#    0.1s ScriptCallbacks 计时器在 bots 进程不泵(真机:调用后无
-#    onMoveOver/onMoveFailure 回调)——客户端位移面死路,走位改服务端权威:
-#    reqGoto(exposed)→ cell moveToPoint,视图同步回推位置。
-# 因此走服务端雷达模式:入场 ping 最近存活怪 + 受击推攻击者位置(经基座
-# 中继 onMonsterNear),无头玩家据此 reqGoto 走位、贴身即 cell.reqAttack
-# 回击——登录→建角色→移动→攻击→击杀奖励→升级→死亡重生完整回路不依赖 Unity。
+# Four engine facts (all proven on the real machine):
+# 1) The bots process has no KBEngine.entities module face and client
+#    entities have no self.entities either (bots only registers the
+#    "bots" module, bots.cpp:180; the entities descriptor lives on
+#    ClientObjectBase, not the script Entity) -- the client cannot
+#    enumerate targets on its own.
+# 2) Client entities in the bots process have no script timer face
+#    (bots.out "assertion failed: g_pApp ... at: addTimer") -- every
+#    action must be callback-driven.
+# 3) Cell-side self.client depends on the witness chain
+#    (cellapp/entity.cpp pyGetClientEntityCall) and is always None in
+#    the bots process on the real machine -- cell->client direct push
+#    is a dead end; client pushes must relay through the base
+#    (onRadarPush BaseMethods -> base.client).
+# 4) client_lib moveToPoint (client_lib/entity.cpp:29) is accepted but
+#    its 0.1s ScriptCallbacks timer never pumps in the bots process
+#    (real machine: no onMoveOver/onMoveFailure after the call) --
+#    client-side movement is a dead end; walking is server-authoritative:
+#    reqGoto (exposed) -> cell moveToPoint, position syncs back via the
+#    view.
+# Hence the server radar model: ping the nearest alive monster on
+# entering + push the attacker position on being hit (relayed via the
+# base onMonsterNear); headless players reqGoto toward the target and
+# reqAttack once close -- the full loop login -> create avatar -> move
+# -> attack -> kill rewards -> level up -> death/respawn runs without
+# Unity.
 import KBEngine
 from KBEDebug import *
 from DemoConsts import DEMO_ATTACK_RANGE
@@ -28,24 +40,28 @@ class Avatar(KBEngine.Entity):
 		self.lastTargetId = 0
 		self.aiMoving = False
 		self.realmUpCount = 0
-		INFO_MSG("bots Avatar[%s] client entity created, pos=%s" % (self.id, getattr(self, "position", None)))
-		msg = "bots Avatar[%s] client entity created (entity sync), pos=%s" % (self.id, getattr(self, "position", None))
+		INFO_MSG(f"bots Avatar[{self.id}] client entity created, pos={getattr(self, 'position', None)}")
+		msg = f"bots Avatar[{self.id}] client entity created (entity sync), pos={getattr(self, 'position', None)}"
 		evidenceLog(msg)
 
 	def _fightAt(self, monsterId, x, z):
-		"""雷达目标:近身即回击(exposed cell 方法),远处 reqGoto 服务端走位。"""
+		"""Radar target: reqAttack once in range (exposed cell method),
+		reqGoto for server-authoritative walking when far."""
 		if monsterId != self.lastTargetId:
-			msg = "bots Avatar[%s] target Monster[%s] radar=(%.1f,%.1f)" % (self.id, monsterId, x, z)
+			msg = f"bots Avatar[{self.id}] target Monster[{monsterId}] radar=({x:.1f},{z:.1f})"
 			evidenceLog(msg)
 			self.lastTargetId = monsterId
-			# 换目标即重走位:登录同步窗口内发出的 cell 面调用会被引擎丢弃
-			# (真机:入场即发的 reqGoto 10/10 未达),下一推(受击雷达)补发即达。
+			# Retarget resets walking: cell-face calls fired inside the login sync
+			# window are dropped by the engine (real machine: the reqGoto sent
+			# right on entering missed 10/10); the next radar push re-sends it.
 			self.aiMoving = False
 		# DEMO-GAME-023 combat-driven cultivation pump: radar pushes are the
-		# only reliable client-side heartbeat in the bots process (真机判例:
-		# onEnterWorld 不发/onHPChanged 非属性回调不触发,onLevelUp 仅击杀节拍),
-		# 每推一次 reqPractice,20 exp/推 过 REALM_EXP 阈值即 REALM UP。
-		# base entitycall 在本地自造的客户端实体(训练桩)上为 None,须守卫。
+		# only reliable client-side heartbeat in the bots process (real-machine
+		# findings: onEnterWorld never fires, onHPChanged is a non-property
+		# callback that never triggers, onLevelUp only beats on kills); each
+		# push calls reqPractice, 20 exp per push crosses the REALM_EXP
+		# threshold -> REALM UP. The base entitycall is None on client
+		# entities created locally (training stubs), hence the guard.
 		if self.base is not None:
 			self.base.reqPractice()
 		dist = ((self.position.x - x) ** 2 + (self.position.z - z) ** 2) ** 0.5
@@ -56,28 +72,30 @@ class Avatar(KBEngine.Entity):
 			return
 		if not self.aiMoving:
 			self.aiMoving = True
-			msg = "bots Avatar[%s] move toward Monster[%s] from (%.1f,%.1f) dist=%.1f" % (
-				self.id, monsterId, self.position.x, self.position.z, dist,
-			)
+			msg = (f"bots Avatar[{self.id}] move toward Monster[{monsterId}] "
+				f"from ({self.position.x:.1f},{self.position.z:.1f}) dist={dist:.1f}")
 			evidenceLog(msg)
-			# 引擎取证:client_lib moveToPoint 靠 0.1s ScriptCallbacks 计时器驱动,
-			# 该计时器在 bots 进程不泵(真机:调用后无 onMoveOver/onMoveFailure 回调);
-			# 客户端位移面死路,改服务端权威走位:reqGoto(exposed)→ cell 走向
-			# 雷达目标 moveToPoint(客户端发令,服务端移动并经视图同步回推)。
+			# Engine evidence: client_lib moveToPoint is driven by a 0.1s
+			# ScriptCallbacks timer that never pumps in the bots process (real
+			# machine: no onMoveOver/onMoveFailure after the call); client-side
+			# movement is a dead end, so walking is server-authoritative:
+			# reqGoto (exposed) -> cell moves toward the radar target via
+			# moveToPoint (client orders, server moves, view syncs back).
 			if self.cell is not None:
 				self.cell.reqGoto()
 
 	def onMonsterNear(self, x, z, monsterId):
 		"""
-		Client method.(Avatar.def ClientMethods,服务端雷达推送:受击时攻击者位置)
+		Client method.(Avatar.def ClientMethods; server radar push: attacker
+		position when this entity takes a hit)
 		"""
 		self._fightAt(monsterId, x, z)
 
 	def onEnterWorld(self):
 		"""
-		KBEngine method.(客户端实体进场:玩法回路起点)
+		KBEngine method.(client entity entered the world: gameplay loop start)
 		"""
-		msg = "bots Avatar[%s] onEnterWorld pos=(%.1f,%.1f)" % (self.id, self.position.x, self.position.z)
+		msg = f"bots Avatar[{self.id}] onEnterWorld pos=({self.position.x:.1f},{self.position.z:.1f})"
 		evidenceLog(msg)
 		# DEMO-GAME-023 bot loop kick-off: cultivation starts with the first
 		# practice call; onHPChanged keeps pumping per damage tick so the
@@ -87,23 +105,23 @@ class Avatar(KBEngine.Entity):
 
 	def onMoveOver(self, controllerId, userarg):
 		"""
-		KBEngine method.(客户端 moveToPoint 到点,client_lib/moveto_point_handler.cpp:54)
-		到点即回击最后雷达目标(若仍锁定)。
+		KBEngine method.(client moveToPoint arrived,
+		client_lib/moveto_point_handler.cpp:54; strike the last radar target
+		on arrival if still locked).
 		"""
 		self.aiMoving = False
-		msg = "bots Avatar[%s] arrived (%.1f,%.1f)" % (self.id, self.position.x, self.position.z)
+		msg = f"bots Avatar[{self.id}] arrived ({self.position.x:.1f},{self.position.z:.1f})"
 		evidenceLog(msg)
 		if self.lastTargetId and self.cell is not None:
 			self.cell.reqAttack(self.lastTargetId)
 
 	def onMoveFailure(self, controllerId, userarg):
 		"""
-		KBEngine method.(客户端移动失败:目标丢失等,清走位状态)
+		KBEngine method.(client move failed: target lost etc., reset walking)
 		"""
 		self.aiMoving = False
-		msg = "bots Avatar[%s] move FAILED (pos=%.1f,%.1f)" % (
-			self.id, self.position.x, self.position.z,
-		)
+		msg = (f"bots Avatar[{self.id}] move FAILED "
+			f"(pos={self.position.x:.1f},{self.position.z:.1f})")
 		evidenceLog(msg)
 
 	def onLevelUp(self, newLevel):
@@ -111,61 +129,69 @@ class Avatar(KBEngine.Entity):
 		Client method.(Avatar.def ClientMethods)
 		DEMO-GAME-023: kill cadence doubles as a practice pump beat.
 		"""
-		msg = "bots Avatar[%s] onLevelUp level=%s" % (self.id, newLevel)
+		msg = f"bots Avatar[{self.id}] onLevelUp level={newLevel}"
 		evidenceLog(msg)
 		if self.base is not None:
 			self.base.reqPractice()
 
 	def onRealmUp(self, realm):
 		"""
-		Client method.(Avatar.def ClientMethods,修仙战役 DEMO-GAME-011)
+		Client method.(Avatar.def ClientMethods, cultivation DEMO-GAME-011)
 		DEMO-GAME-023 chain: first breakthrough places the formation;
 		second fires the founder's sect chat (roster long settled by then).
 		"""
 		self.realmUpCount += 1
-		msg = "bots Avatar[%s] onRealmUp realm=%s count=%i" % (self.id, realm, self.realmUpCount)
+		msg = f"bots Avatar[{self.id}] onRealmUp realm={realm} count={self.realmUpCount}"
 		evidenceLog(msg)
 		if self.realmUpCount == 1:
 			if self.base is not None:
 				self.base.reqPlaceFormation("gather", self.position.x, self.position.z)
 		elif self.realmUpCount == 2 and getattr(self, "sectId", 0):
-			# founder 判据不用固定名(bot 名带动态客户端 id,023 真机判例):
-			# 第二次突破时已在宗即开口,宗门广播到达全员客户端。
+			# No fixed-name founder test (bot names carry dynamic client ids,
+			# 023 real-machine finding): chat on the second breakthrough while
+			# already in a sect, the broadcast reaches every member client.
 			if self.base is not None:
 				self.base.reqSectChat("sect-demo is open, fellow cultivators")
 
 	def onFormationPlaced(self, kind, formationId):
 		"""
-		Client method.(Avatar.def ClientMethods,DEMO-GAME-023 chain)
-		布阵回执后并行展开:收宠+炼符+建宗/入宗(角色分流,bot3 建宗)。
+		Client method.(Avatar.def ClientMethods, DEMO-GAME-023 chain)
+		After the formation receipt: adopt pet + forge talisman + join sect
+		(join-or-found, see the sect branch comment below).
 		"""
-		msg = "bots Avatar[%s] onFormationPlaced kind=%s fid=%s" % (self.id, kind, formationId)
+		msg = f"bots Avatar[{self.id}] onFormationPlaced kind={kind} fid={formationId}"
 		evidenceLog(msg)
 		if self.base is None:
 			return
-		self.base.reqAdoptPet("pet-" + str(getattr(self, "name", self.id)))
+		self.base.reqAdoptPet(f"pet-{getattr(self, 'name', self.id)}")
 		self.base.reqForgeTalisman()
-		if getattr(self, "name", "") == "bot3":
-			self.base.reqCreateSect("sect-demo")
-		else:
+		# 024: sect assignment is back to the 023 join-or-found pattern (all
+		# request by name, whoever exhausts retries founds, the unique-name
+		# gate guarantees a single winner; explicit founder-name tests have
+		# no stable name left to key on). Already in a sect (sectId restored
+		# by the DB read on reboot) skips it -- the sectId round trip is
+		# itself an acceptance anchor.
+		if not getattr(self, "sectId", 0):
 			self.base.reqJoinSectByName("sect-demo")
 
 	def onPetAdopted(self, petDbid):
 		"""
-		Client method.(Avatar.def ClientMethods,DEMO-GAME-023 chain)
-		收宠回执→召唤身边(协战锚在 cell 侧 Pet ASSIST evidenceLog)。
+		Client method.(Avatar.def ClientMethods, DEMO-GAME-023 chain)
+		Adopt receipt -> summon beside (the assist anchor is the cell-side
+		Pet ASSIST evidenceLog).
 		"""
-		msg = "bots Avatar[%s] onPetAdopted dbid=%s -> summon" % (self.id, petDbid)
+		msg = f"bots Avatar[{self.id}] onPetAdopted dbid={petDbid} -> summon"
 		evidenceLog(msg)
 		if self.base is not None:
 			self.base.reqSummonPet(petDbid)
 
 	def onTalismanGained(self, talismanDbid):
 		"""
-		Client method.(Avatar.def ClientMethods,DEMO-GAME-023 chain)
-		炼符回执→即用(AOE 命中锚在 cell 侧 useTalismanBlast)。
+		Client method.(Avatar.def ClientMethods, DEMO-GAME-023 chain)
+		Forge receipt -> use at once (the AOE anchor is the cell-side
+		useTalismanBlast).
 		"""
-		msg = "bots Avatar[%s] onTalismanGained dbid=%s -> use" % (self.id, talismanDbid)
+		msg = f"bots Avatar[{self.id}] onTalismanGained dbid={talismanDbid} -> use"
 		evidenceLog(msg)
 		if self.base is not None:
 			self.base.reqUseTalisman(talismanDbid)
@@ -174,19 +200,19 @@ class Avatar(KBEngine.Entity):
 		"""
 		Client method.(Avatar.def ClientMethods)
 		"""
-		DEBUG_MSG("bots Avatar.onHPChanged: %i" % hp)
+		DEBUG_MSG(f"bots Avatar.onHPChanged: {hp}")
 		if hp > 0:
 			# DEMO-GAME-023: combat-driven cultivation pump (per damage tick)
 			if self.base is not None:
 				self.base.reqPractice()
 			if not self.aiMoving and self.cell is not None:
-				# 受击即向最后雷达目标回击一次(近战贴脸状态)
+				# strike back at the last radar target on each hit (melee range)
 				self.cell.reqAttack(self.lastTargetId)
 
 	def onSectChat(self, sender, text):
 		"""Sect channel push (DEMO-GAME-019/023): real implementation for the
 		stub declared above; anchor proves cross-entity roster broadcast."""
-		msg = "bots Avatar[%s] SECT CHAT from=%s text=%s" % (self.id, sender, text)
+		msg = f"bots Avatar[{self.id}] SECT CHAT from={sender} text={text}"
 		evidenceLog(msg)
 
 	def onBodySeized(self, a1, a2):

@@ -59,7 +59,8 @@ describe('DEMO-GAME-001 世界地基(夹具内容)', () => {
 
   it('base/Account.py:reqCreateAvatar 本地建 Avatar 并 giveClientTo;onClientEnabled 通知 onLoginOK', () => {
     const src = read('scripts', 'base', 'Account.py');
-    expect(src).toMatch(/def\s+reqCreateAvatar\(self,\s*name\)/);
+    // DEMO-GAME-069: race argument (1 = human, 2 = yao) appended to the signature.
+    expect(src).toMatch(/def\s+reqCreateAvatar\(self,\s*name,\s*race\)/);
     expect(src).toMatch(/KBEngine\.createEntityLocally\(\s*"Avatar"/);
     expect(src).toMatch(/self\.giveClientTo\(\s*avatar\s*\)/);
     expect(src).toMatch(/self\.client\.onLoginOK\(\)/);
