@@ -50,4 +50,106 @@
 		<of> ITEM_ID </of>
 	</ITEM_IDS>
 
+	<!-- 修仙 MMO 扩展(DEMO-GAME-010):六新类型。引用只落在已声明名
+	     (ITEM_ID 上文化名链),字段全内建标量——引擎 loadTypes 单遍序敏,
+	     零前向引用。 -->
+	<SPIRIT_ROOTS>
+		FIXED_DICT
+		<Properties>
+			<metal>
+				<Type> UINT8 </Type>
+			</metal>
+			<wood>
+				<Type> UINT8 </Type>
+			</wood>
+			<water>
+				<Type> UINT8 </Type>
+			</water>
+			<fire>
+				<Type> UINT8 </Type>
+			</fire>
+			<earth>
+				<Type> UINT8 </Type>
+			</earth>
+		</Properties>
+	</SPIRIT_ROOTS>
+
+	<ATTRS>
+		FIXED_DICT
+		<Properties>
+			<maxHp>
+				<Type> UINT32 </Type>
+			</maxHp>
+			<attack>
+				<Type> UINT32 </Type>
+			</attack>
+			<defense>
+				<Type> UINT32 </Type>
+			</defense>
+			<qi>
+				<Type> UINT32 </Type>
+			</qi>
+		</Properties>
+	</ATTRS>
+
+	<ITEM_INFO>
+		FIXED_DICT
+		<Properties>
+			<itemId>
+				<Type> ITEM_ID </Type>
+			</itemId>
+			<count>
+				<Type> UINT16 </Type>
+			</count>
+		</Properties>
+	</ITEM_INFO>
+
+	<EQUIP_SLOT>
+		FIXED_DICT
+		<Properties>
+			<dbid>
+				<Type> UINT64 </Type>
+			</dbid>
+			<strengthen>
+				<Type> UINT8 </Type>
+			</strengthen>
+		</Properties>
+	</EQUIP_SLOT>
+
+	<PET_INFO>
+		FIXED_DICT
+		<Properties>
+			<dbid>
+				<Type> UINT64 </Type>
+			</dbid>
+			<name>
+				<Type> STRING </Type>
+			</name>
+			<realm>
+				<Type> UINT8 </Type>
+			</realm>
+		</Properties>
+	</PET_INFO>
+
+	<MEMBER_INFO>
+		FIXED_DICT
+		<Properties>
+			<dbid>
+				<Type> UINT64 </Type>
+			</dbid>
+			<name>
+				<Type> STRING </Type>
+			</name>
+			<realm>
+				<Type> UINT8 </Type>
+			</realm>
+			<rank>
+				<Type> UINT8 </Type>
+			</rank>
+			<dept>
+				<Type> UINT8 </Type>
+			</dept>
+		</Properties>
+	</MEMBER_INFO>
+
 </root>
