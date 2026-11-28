@@ -53,6 +53,11 @@ DEMO_DROP_ITEM_COUNT = 1           # stack count added per kill
 # Talisman AOE (DEMO-GAME-016)
 DEMO_TALISMAN_RADIUS = 6.0        # blast radius around the caster
 
+# Demo talisman forge recipe (DEMO-GAME-023 bot loop)
+DEMO_TALISMAN_ITEM_ID = 3001      # catalog id of the forged talisman
+DEMO_TALISMAN_CHARGES = 3         # uses before the talisman self-destructs
+DEMO_TALISMAN_POWER = 40          # AOE damage per use
+
 # Pet follow / assist (DEMO-GAME-017)
 DEMO_PET_DAMAGE = 8           # pet assist hit damage (no wu xing multiplier)
 DEMO_PET_FOLLOW_DIST = 4.0    # start following when farther than this

@@ -462,6 +462,16 @@
 			<Arg> STRING </Arg>
 			<Arg> STRING </Arg>
 		</onSectChat>
+		<!-- Pet roster (DEMO-GAME-023 bot loop): dbid of the freshly
+		     adopted pet, so the client can chain reqSummonPet. -->
+		<onPetAdopted>
+			<Arg> UINT64 </Arg>
+		</onPetAdopted>
+		<!-- Talisman forge ack (DEMO-GAME-023): dbid of the new talisman,
+		     so the client can chain reqUseTalisman. -->
+		<onTalismanGained>
+			<Arg> UINT64 </Arg>
+		</onTalismanGained>
 	</ClientMethods>
 
 	<BaseMethods>
@@ -727,6 +737,12 @@
 		<reqPlaceFormation>
 			<Exposed> true </Exposed>
 			<Arg> STRING </Arg>
+			<!-- Casting position rides the call (023 real-machine
+			     precedent: the base entity has no self.position, it
+			     lives on the cell part; the client sends its mirrored
+			     position). -->
+			<Arg> FLOAT </Arg>
+			<Arg> FLOAT </Arg>
 		</reqPlaceFormation>
 		<!-- Sect (DEMO-GAME-019): found (unique name + gold escrow), join
 		     by sect dbid, leave (leader transfer / disband on empty), and
@@ -746,6 +762,18 @@
 			<Exposed> true </Exposed>
 			<Arg> STRING </Arg>
 		</reqSectChat>
+		<!-- Forge a demo talisman (DEMO-GAME-023 bot loop): create +
+		     persist, then push onTalismanGained(dbid). -->
+		<reqForgeTalisman>
+			<Exposed> true </Exposed>
+		</reqForgeTalisman>
+		<!-- Join a sect by name (DEMO-GAME-023): looks up the globalData
+		     sectname registry, short server-side retry while the founder's
+		     writeToDB is still in flight. -->
+		<reqJoinSectByName>
+			<Exposed> true </Exposed>
+			<Arg> STRING </Arg>
+		</reqJoinSectByName>
 	</BaseMethods>
 
 	<CellMethods>

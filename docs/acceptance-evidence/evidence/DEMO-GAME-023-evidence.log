@@ -1,0 +1,1525 @@
+# DEMO-GAME-023 bots 全回路扩展验收证据 (2026-11-28)
+# boot: KBE_DEMO_DB=127.0.0.1:3306 KBE_DEMO_DB_USER=kbe KBE_DEMO_DB_PASS=*** KBE_DEMO_ASSETS=templates/assets scripts/run-demo-engine.sh start + bots (bot window 300s)
+# rows snapshot (post-run):
+tbl_Account	10
+tbl_Avatar	10
+tbl_Avatar_bag	10
+tbl_Pet	10
+tbl_Sect	1
+tbl_Sect_members	9
+tbl_Item	0
+tbl_Equipment	0
+tbl_Talisman	10
+tbl_Formation	0
+# loop anchor counts (full run, 4905 raw lines, file truncated to first 1500 below):
+# REALM UP x18 / PLACE FORMATION x10 (+bots client receipt x10) / ADOPT PET x10
+# (+onPetAdopted receipt x10) / SUMMON PET x10 / Pet ASSIST hit x846 /
+# FORGE TALISMAN x10 (+onTalismanGained receipt x10) / TALISMAN use x10 /
+# SECT FOUNDED x1 / JOIN SECT BY NAME wait x2 / SECT JOIN x8 /
+# Sect CHAT broadcast x45 (+bots client receipt x45) / monsters respawned x20
+# 捡物 = kill drop anchored in DEMO-GAME-022 (bag.addItem pure core);
+# 穿戴 = reqEquipWear/reqForgeEquip blocked by DEMO-GAME-073 (bag CELL_PUBLIC
+# base-side non-materialization), intentionally not exercised here.
+# evidence anchors:
+[demo-evidence] Spaces[1] created (baseapp)
+[demo-evidence] Space[2].onGetCell: space established (index=1)
+[demo-evidence] Avatar[2001].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(10.000000, 0.000000, 10.000000), ref=true
+[demo-evidence] Avatar[2002].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(-10.000000, 0.000000, 10.000000), ref=true
+[demo-evidence] Avatar[2003].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, -15.000000), ref=true
+[demo-evidence] Avatar[2004].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(14.000000, 0.000000, -6.000000), ref=true
+[demo-evidence] Avatar[2005].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(-14.000000, 0.000000, -4.000000), ref=true
+[demo-evidence] Avatar[2006].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(18.000000, 0.000000, 2.000000), ref=true
+[demo-evidence] Avatar[2007].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(-18.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Avatar[2008].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(4.000000, 0.000000, -20.000000), ref=true
+[demo-evidence] Space cell[2] spawn done: [2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008] (spaceID=1)
+[demo-evidence] hot-reload heartbeat tick 1 (main loop GIL window)
+[demo-evidence] hot-reload heartbeat tick 1 (main loop GIL window)
+[demo-evidence] Monster[2005] AI IDLE -> WANDER (pos=-14.0,0.0,-4.0)
+[demo-evidence] Monster[2008] AI IDLE -> WANDER (pos=4.0,0.0,-20.0)
+[demo-evidence] Monster[2003] AI IDLE -> WANDER (pos=0.0,0.0,-15.0)
+[demo-evidence] Monster[2004] AI IDLE -> WANDER (pos=14.0,0.0,-6.0)
+[demo-evidence] Monster[2001] AI IDLE -> WANDER (pos=10.0,0.0,10.0)
+[demo-evidence] Monster[2002] AI IDLE -> WANDER (pos=-10.0,0.0,10.0)
+[demo-evidence] Monster[2006] AI IDLE -> WANDER (pos=18.0,0.0,2.0)
+[demo-evidence] Monster[2007] AI IDLE -> WANDER (pos=-18.0,0.0,0.0)
+[demo-evidence] bots Account[4].onLoginOK: reqCreateAvatar
+[demo-evidence] bots Account[3].onLoginOK: reqCreateAvatar
+[demo-evidence] bots Account[5].onLoginOK: reqCreateAvatar
+[demo-evidence] bots Account[6].onLoginOK: reqCreateAvatar
+[demo-evidence] bots Account[8].onLoginOK: reqCreateAvatar
+[demo-evidence] Account[6].reqCreateAvatar: bot6 race=1 spiritRoots={'metal': 10, 'wood': 10, 'water': 10, 'fire': 59, 'earth': 11}
+[demo-evidence] Avatar[13] created, name=bot6 -> enterSpace(1)
+[demo-evidence] Avatar[13] enterSpace dominantRoot=4 (fire)
+[demo-evidence] Avatar[13].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Avatar[13].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Account[8].reqCreateAvatar: bot8 race=1 spiritRoots={'metal': 56, 'wood': 11, 'water': 11, 'fire': 11, 'earth': 11}
+[demo-evidence] Avatar[13] radar ping nearest Monster[2005] dist=11.5
+[demo-evidence] Avatar[14] created, name=bot8 -> enterSpace(1)
+[demo-evidence] Avatar[14] enterSpace dominantRoot=1 (metal)
+[demo-evidence] Avatar[14].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Account[4].reqCreateAvatar: bot4 race=1 spiritRoots={'metal': 14, 'wood': 14, 'water': 43, 'fire': 15, 'earth': 14}
+[demo-evidence] Avatar[14].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Avatar[14] radar ping nearest Monster[2005] dist=11.5
+[demo-evidence] Avatar[15] created, name=bot4 -> enterSpace(1)
+[demo-evidence] Avatar[15] enterSpace dominantRoot=3 (water)
+[demo-evidence] Avatar[15].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Avatar[15].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Account[3].reqCreateAvatar: bot3 race=1 spiritRoots={'metal': 14, 'wood': 13, 'water': 13, 'fire': 46, 'earth': 14}
+[demo-evidence] Avatar[15] radar ping nearest Monster[2005] dist=11.5
+[demo-evidence] Avatar[16] created, name=bot3 -> enterSpace(1)
+[demo-evidence] Avatar[16] enterSpace dominantRoot=4 (fire)
+[demo-evidence] Avatar[16].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Avatar[16].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Account[5].reqCreateAvatar: bot5 race=1 spiritRoots={'metal': 55, 'wood': 12, 'water': 11, 'fire': 11, 'earth': 11}
+[demo-evidence] Avatar[16] radar ping nearest Monster[2005] dist=11.5
+[demo-evidence] Avatar[17] created, name=bot5 -> enterSpace(1)
+[demo-evidence] Avatar[17] enterSpace dominantRoot=1 (metal)
+[demo-evidence] Avatar[17].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Avatar[17].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Avatar[17] radar ping nearest Monster[2005] dist=11.5
+[demo-evidence] Avatar[13].onRadarPush attacker=2005 client=set
+[demo-evidence] bots Account[7].onLoginOK: reqCreateAvatar
+[demo-evidence] Avatar[14].onRadarPush attacker=2005 client=set
+[demo-evidence] bots Account[11].onLoginOK: reqCreateAvatar
+[demo-evidence] Avatar[15].onRadarPush attacker=2005 client=set
+[demo-evidence] Avatar[16].onRadarPush attacker=2005 client=set
+[demo-evidence] bots Account[12].onLoginOK: reqCreateAvatar
+[demo-evidence] Avatar[17].onRadarPush attacker=2005 client=set
+[demo-evidence] bots Account[9].onLoginOK: reqCreateAvatar
+[demo-evidence] bots Account[10].onLoginOK: reqCreateAvatar
+[demo-evidence] Account[7].reqCreateAvatar: bot7 race=1 spiritRoots={'metal': 11, 'wood': 11, 'water': 55, 'fire': 12, 'earth': 11}
+[demo-evidence] Avatar[18] created, name=bot7 -> enterSpace(1)
+[demo-evidence] Avatar[18] enterSpace dominantRoot=3 (water)
+[demo-evidence] Avatar[18].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Account[11].reqCreateAvatar: bot11 race=1 spiritRoots={'metal': 14, 'wood': 14, 'water': 42, 'fire': 15, 'earth': 15}
+[demo-evidence] Avatar[18].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Avatar[18] radar ping nearest Monster[2005] dist=11.5
+[demo-evidence] Avatar[19] created, name=bot11 -> enterSpace(1)
+[demo-evidence] Avatar[19] enterSpace dominantRoot=3 (water)
+[demo-evidence] Avatar[19].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Avatar[19].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Account[12].reqCreateAvatar: bot12 race=1 spiritRoots={'metal': 12, 'wood': 50, 'water': 13, 'fire': 13, 'earth': 12}
+[demo-evidence] Avatar[19] radar ping nearest Monster[2005] dist=11.5
+[demo-evidence] Avatar[20] created, name=bot12 -> enterSpace(1)
+[demo-evidence] Avatar[20] enterSpace dominantRoot=2 (wood)
+[demo-evidence] Avatar[20].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Account[9].reqCreateAvatar: bot9 race=1 spiritRoots={'metal': 13, 'wood': 12, 'water': 12, 'fire': 12, 'earth': 51}
+[demo-evidence] Avatar[20].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Avatar[20] radar ping nearest Monster[2005] dist=11.5
+[demo-evidence] Avatar[21] created, name=bot9 -> enterSpace(1)
+[demo-evidence] Avatar[21] enterSpace dominantRoot=5 (earth)
+[demo-evidence] Avatar[21].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Avatar[21].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Account[10].reqCreateAvatar: bot10 race=1 spiritRoots={'metal': 12, 'wood': 12, 'water': 12, 'fire': 51, 'earth': 13}
+[demo-evidence] Avatar[21] radar ping nearest Monster[2005] dist=11.5
+[demo-evidence] Avatar[22] created, name=bot10 -> enterSpace(1)
+[demo-evidence] Avatar[22] enterSpace dominantRoot=4 (fire)
+[demo-evidence] Avatar[22].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Avatar[22].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Avatar[22] radar ping nearest Monster[2005] dist=11.5
+[demo-evidence] Avatar[18].onRadarPush attacker=2005 client=set
+[demo-evidence] Avatar[19].onRadarPush attacker=2005 client=set
+[demo-evidence] Avatar[20].onRadarPush attacker=2005 client=set
+[demo-evidence] Avatar[21].onRadarPush attacker=2005 client=set
+[demo-evidence] Avatar[22].onRadarPush attacker=2005 client=set
+[demo-evidence] bots Avatar[15] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[15] target Monster[2005] radar=(-9.5,-6.5)
+[demo-evidence] bots Avatar[15] move toward Monster[2005] from (0.0,0.0) dist=11.5
+[demo-evidence] bots Avatar[16] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[16] target Monster[2005] radar=(-9.5,-6.5)
+[demo-evidence] bots Avatar[16] move toward Monster[2005] from (0.0,0.0) dist=11.5
+[demo-evidence] bots Avatar[17] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[17] target Monster[2005] radar=(-9.5,-6.5)
+[demo-evidence] bots Avatar[17] move toward Monster[2005] from (0.0,0.0) dist=11.5
+[demo-evidence] bots Avatar[13] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[13] target Monster[2005] radar=(-9.5,-6.5)
+[demo-evidence] bots Avatar[13] move toward Monster[2005] from (0.0,0.0) dist=11.5
+[demo-evidence] bots Avatar[14] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[14] target Monster[2005] radar=(-9.5,-6.5)
+[demo-evidence] bots Avatar[14] move toward Monster[2005] from (0.0,0.0) dist=11.5
+[demo-evidence] bots Avatar[20] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[20] target Monster[2005] radar=(-9.5,-6.5)
+[demo-evidence] bots Avatar[20] move toward Monster[2005] from (0.0,0.0) dist=11.5
+[demo-evidence] bots Avatar[21] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[21] target Monster[2005] radar=(-9.5,-6.5)
+[demo-evidence] bots Avatar[21] move toward Monster[2005] from (0.0,0.0) dist=11.5
+[demo-evidence] bots Avatar[22] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[22] target Monster[2005] radar=(-9.5,-6.5)
+[demo-evidence] bots Avatar[22] move toward Monster[2005] from (0.0,0.0) dist=11.5
+[demo-evidence] bots Avatar[18] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[18] target Monster[2005] radar=(-9.5,-6.5)
+[demo-evidence] bots Avatar[18] move toward Monster[2005] from (0.0,0.0) dist=11.5
+[demo-evidence] bots Avatar[19] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[19] target Monster[2005] radar=(-9.5,-6.5)
+[demo-evidence] bots Avatar[19] move toward Monster[2005] from (0.0,0.0) dist=11.5
+[demo-evidence] Monster[2005] AI WANDER -> CHASE (pos=-8.7,0.0,-7.0)
+[demo-evidence] Monster[2003] AI WANDER -> CHASE (pos=-1.1,0.0,-10.9)
+[demo-evidence] Avatar[15].reqAttack hit Monster[2005] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2005].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2005].receiveDamage dmg=15 attacker=15 hp=85
+[demo-evidence] Avatar[18].reqAttack hit Monster[2005] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2005].onDamaged attacker=Avatar[18] -> counter-aggro
+[demo-evidence] Avatar[2005].receiveDamage dmg=15 attacker=18 hp=70
+[demo-evidence] Avatar[16].reqAttack hit Monster[2005] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2005].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2005].receiveDamage dmg=15 attacker=16 hp=55
+[demo-evidence] Avatar[19].reqAttack hit Monster[2005] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2005].onDamaged attacker=Avatar[19] -> counter-aggro
+[demo-evidence] Avatar[2005].receiveDamage dmg=15 attacker=19 hp=40
+[demo-evidence] Avatar[17].reqAttack hit Monster[2005] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2005].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2005].receiveDamage dmg=15 attacker=17 hp=25
+[demo-evidence] Avatar[20].reqAttack hit Monster[2005] dmg=15 root=2 vs 0 mult=1.00
+[demo-evidence] Monster[2005].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2005].receiveDamage dmg=15 attacker=20 hp=10
+[demo-evidence] Avatar[22].reqAttack hit Monster[2005] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2005].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2005].receiveDamage dmg=15 attacker=22 hp=0
+[demo-evidence] Monster[2005] DIED (killer=22)
+[demo-evidence] Monster[2005] KILLED by Avatar[22] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[22] LEVEL UP -> 2 (experience=50)
+[demo-evidence] bots Avatar[22] onLevelUp level=2
+[demo-evidence] Avatar[2009].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(-14.000000, 0.000000, -4.000000), ref=true
+[demo-evidence] Space cell[2] monsters respawned: [2009]
+[demo-evidence] Monster[2009] AI IDLE -> WANDER (pos=-14.0,0.0,-4.0)
+[demo-evidence] Monster[2009] AI WANDER -> CHASE (pos=-11.0,0.0,-4.0)
+[demo-evidence] Monster[2001] AI WANDER -> CHASE (pos=5.9,0.0,8.9)
+[demo-evidence] Monster[2003] AI CHASE -> ATTACK (pos=-0.2,0.0,-2.0)
+[demo-evidence] Avatar[13].receiveDamage dmg=25 attacker=2003 hp=75
+[demo-evidence] Avatar[13] radar push attacker=Monster[2003] via base
+[demo-evidence] Monster[2003] ATTACK hit Avatar[13] dmg=25 root=0 vs 4 mult=1.00 targetHp=75
+[demo-evidence] Avatar[13].onRadarPush attacker=2003 client=set
+[demo-evidence] bots Avatar[13] target Monster[2003] radar=(-0.2,-2.0)
+[demo-evidence] Avatar[17].reqAttack hit Monster[2003] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2003].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2003].receiveDamage dmg=15 attacker=17 hp=85
+[demo-evidence] Avatar[20].reqAttack hit Monster[2003] dmg=15 root=2 vs 0 mult=1.00
+[demo-evidence] Monster[2003].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2003].receiveDamage dmg=15 attacker=20 hp=70
+[demo-evidence] Avatar[14].reqAttack hit Monster[2003] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2003].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2003].receiveDamage dmg=15 attacker=14 hp=55
+[demo-evidence] Avatar[16].reqAttack hit Monster[2003] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2003].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2003].receiveDamage dmg=15 attacker=16 hp=40
+[demo-evidence] Avatar[22].reqAttack hit Monster[2003] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2003].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2003].receiveDamage dmg=15 attacker=22 hp=25
+[demo-evidence] Avatar[15].reqAttack hit Monster[2003] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2003].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2003].receiveDamage dmg=15 attacker=15 hp=10
+[demo-evidence] Avatar[13].reqAttack hit Monster[2003] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2003].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2003].receiveDamage dmg=15 attacker=13 hp=0
+[demo-evidence] Monster[2003] DIED (killer=13)
+[demo-evidence] Monster[2003] KILLED by Avatar[13] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[13] LEVEL UP -> 2 (experience=70)
+[demo-evidence] bots Avatar[13] onLevelUp level=2
+[demo-evidence] Monster[2009] AI CHASE -> ATTACK (pos=-1.7,0.0,-0.7)
+[demo-evidence] Avatar[13].receiveDamage dmg=25 attacker=2009 hp=50
+[demo-evidence] Avatar[13] radar push attacker=Monster[2009] via base
+[demo-evidence] Monster[2009] ATTACK hit Avatar[13] dmg=25 root=0 vs 4 mult=1.00 targetHp=50
+[demo-evidence] Avatar[13].onRadarPush attacker=2009 client=set
+[demo-evidence] bots Avatar[13] target Monster[2009] radar=(-1.7,-0.7)
+[demo-evidence] Avatar[13] REALM UP QiRefining->Foundation exp=110 (writeToDB)
+[demo-evidence] bots Avatar[13] onRealmUp realm=1 count=1
+[demo-evidence] Avatar[21].reqAttack hit Monster[2009] dmg=15 root=5 vs 0 mult=1.00
+[demo-evidence] Monster[2009].onDamaged attacker=Avatar[21] -> counter-aggro
+[demo-evidence] Avatar[2009].receiveDamage dmg=15 attacker=21 hp=85
+[demo-evidence] Avatar[19].reqAttack hit Monster[2009] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2009].onDamaged attacker=Avatar[19] -> counter-aggro
+[demo-evidence] Avatar[2009].receiveDamage dmg=15 attacker=19 hp=70
+[demo-evidence] Avatar[17].reqAttack hit Monster[2009] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2009].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2009].receiveDamage dmg=15 attacker=17 hp=55
+[demo-evidence] Avatar[20].reqAttack hit Monster[2009] dmg=15 root=2 vs 0 mult=1.00
+[demo-evidence] Monster[2009].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2009].receiveDamage dmg=15 attacker=20 hp=40
+[demo-evidence] Avatar[18].reqAttack hit Monster[2009] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2009].onDamaged attacker=Avatar[18] -> counter-aggro
+[demo-evidence] Avatar[2009].receiveDamage dmg=15 attacker=18 hp=25
+[demo-evidence] Avatar[16].reqAttack hit Monster[2009] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2009].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2009].receiveDamage dmg=15 attacker=16 hp=10
+[demo-evidence] Avatar[14].reqAttack hit Monster[2009] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2009].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2009].receiveDamage dmg=15 attacker=14 hp=0
+[demo-evidence] Monster[2009] DIED (killer=14)
+[demo-evidence] Monster[2009] KILLED by Avatar[14] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[14] LEVEL UP -> 2 (experience=50)
+[demo-evidence] Avatar[15].reqAttack hit Monster[2001] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2001].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2001].receiveDamage dmg=15 attacker=15 hp=85
+[demo-evidence] Avatar[13].reqAttack hit Monster[2001] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2001].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2001].receiveDamage dmg=15 attacker=13 hp=70
+[demo-evidence] Avatar[22].reqAttack hit Monster[2001] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2001].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2001].receiveDamage dmg=15 attacker=22 hp=55
+[demo-evidence] bots Avatar[14] onLevelUp level=2
+[demo-evidence] Avatar[13] PLACE FORMATION kind=gather id=23 owner=1 at (0.0,0.0)
+[demo-evidence] bots Avatar[13] onFormationPlaced kind=gather fid=23
+[demo-evidence] Pet[24] SAVED dbid=0 name=pet-bot6 owner=1
+[demo-evidence] Item[25] SAVED dbid=0 itemId=3001 count=1 owner=1
+[demo-evidence] Avatar[13] JOIN SECT BY NAME wait registry=sect-demo
+[demo-evidence] Avatar[13] ADOPT PET dbid=1 name=pet-bot6 roster=1
+[demo-evidence] Avatar[13] FORGE TALISMAN dbid=1 charges=3 power=40
+[demo-evidence] bots Avatar[13] onPetAdopted dbid=1 -> summon
+[demo-evidence] bots Avatar[13] onTalismanGained dbid=1 -> use
+[demo-evidence] Avatar[13] SUMMON PET dbid=1 name=pet-bot6 -> cell space=1
+[demo-evidence] Avatar[13] TALISMAN dbid=1 use -> charges=2 power=40
+[demo-evidence] Monster[2001].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2001].receiveDamage dmg=40 attacker=13 hp=15
+[demo-evidence] Avatar[13] TALISMAN BLAST radius=6.0 power=40 hits=1
+[demo-evidence] Monster[2001] AI CHASE -> ATTACK (pos=1.1,0.0,1.4)
+[demo-evidence] Avatar[13].receiveDamage dmg=25 attacker=2001 hp=25
+[demo-evidence] Avatar[13] radar push attacker=Monster[2001] via base
+[demo-evidence] Monster[2001] ATTACK hit Avatar[13] dmg=25 root=0 vs 4 mult=1.00 targetHp=25
+[demo-evidence] Avatar[13].onRadarPush attacker=2001 client=set
+[demo-evidence] bots Avatar[13] target Monster[2001] radar=(1.1,1.4)
+[demo-evidence] Monster[2001].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2001].receiveDamage dmg=8 attacker=13 hp=7
+[demo-evidence] Pet[24] ASSIST hit Monster[2001] dmg=8 for owner=13
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2001].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2001].receiveDamage dmg=8 attacker=13 hp=0
+[demo-evidence] Monster[2001] DIED (killer=13)
+[demo-evidence] Monster[2001] KILLED by Avatar[13] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Pet[24] ASSIST hit Monster[2001] dmg=8 for owner=13
+[demo-evidence] Avatar[13] LEVEL UP -> 4 (experience=160)
+[demo-evidence] bots Avatar[13] onLevelUp level=4
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2002] AI WANDER -> CHASE (pos=-8.5,0.0,8.1)
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2004] AI WANDER -> CHASE (pos=10.7,0.0,-5.4)
+[demo-evidence] Monster[2002].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2002].receiveDamage dmg=8 attacker=13 hp=92
+[demo-evidence] Pet[24] ASSIST hit Monster[2002] dmg=8 for owner=13
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Avatar[13] JOIN SECT BY NAME gave up=sect-demo -> found
+[demo-evidence] Sect[26] SAVED dbid=0 name=sect-demo leader=1 members=0
+[demo-evidence] Avatar[13] SECT FOUNDED dbid=1 name=sect-demo leader=1
+[demo-evidence] Sect[26] SAVED dbid=1 name=sect-demo leader=1 members=1
+[demo-evidence] Monster[2002].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2002].receiveDamage dmg=8 attacker=13 hp=84
+[demo-evidence] Pet[24] ASSIST hit Monster[2002] dmg=8 for owner=13
+[demo-evidence] Monster[2002] AI CHASE -> ATTACK (pos=-1.3,0.0,1.2)
+[demo-evidence] Avatar[13].receiveDamage dmg=25 attacker=2002 hp=40
+[demo-evidence] Avatar[13] radar push attacker=Monster[2002] via base
+[demo-evidence] Monster[2002] ATTACK hit Avatar[13] dmg=25 root=0 vs 4 mult=1.00 targetHp=40
+[demo-evidence] Avatar[13].onRadarPush attacker=2002 client=set
+[demo-evidence] bots Avatar[13] target Monster[2002] radar=(-1.3,1.2)
+[demo-evidence] Monster[2002].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2002].receiveDamage dmg=8 attacker=13 hp=76
+[demo-evidence] Pet[24] ASSIST hit Monster[2002] dmg=8 for owner=13
+[demo-evidence] Avatar[16].reqAttack hit Monster[2002] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2002].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2002].receiveDamage dmg=15 attacker=16 hp=61
+[demo-evidence] Avatar[18].reqAttack hit Monster[2002] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2002].onDamaged attacker=Avatar[18] -> counter-aggro
+[demo-evidence] Avatar[2002].receiveDamage dmg=15 attacker=18 hp=46
+[demo-evidence] Avatar[13].reqAttack hit Monster[2002] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2002].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2002].receiveDamage dmg=15 attacker=13 hp=31
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Avatar[17].reqAttack hit Monster[2002] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2002].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2002].receiveDamage dmg=15 attacker=17 hp=16
+[demo-evidence] Avatar[22].reqAttack hit Monster[2002] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2002].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2002].receiveDamage dmg=15 attacker=22 hp=1
+[demo-evidence] Avatar[20].reqAttack hit Monster[2002] dmg=15 root=2 vs 0 mult=1.00
+[demo-evidence] Monster[2002].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2002].receiveDamage dmg=15 attacker=20 hp=0
+[demo-evidence] Monster[2002] DIED (killer=20)
+[demo-evidence] Monster[2002] KILLED by Avatar[20] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[20] LEVEL UP -> 2 (experience=50)
+[demo-evidence] bots Avatar[20] onLevelUp level=2
+[demo-evidence] Monster[2004].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2004].receiveDamage dmg=8 attacker=13 hp=92
+[demo-evidence] Pet[24] ASSIST hit Monster[2004] dmg=8 for owner=13
+[demo-evidence] Monster[2004].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2004].receiveDamage dmg=8 attacker=13 hp=84
+[demo-evidence] Pet[24] ASSIST hit Monster[2004] dmg=8 for owner=13
+[demo-evidence] Monster[2004] AI CHASE -> ATTACK (pos=1.6,0.0,-0.9)
+[demo-evidence] Avatar[13].receiveDamage dmg=25 attacker=2004 hp=20
+[demo-evidence] Avatar[13] radar push attacker=Monster[2004] via base
+[demo-evidence] Monster[2004] ATTACK hit Avatar[13] dmg=25 root=0 vs 4 mult=1.00 targetHp=20
+[demo-evidence] Avatar[13].onRadarPush attacker=2004 client=set
+[demo-evidence] bots Avatar[13] target Monster[2004] radar=(1.6,-0.9)
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2004].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2004].receiveDamage dmg=8 attacker=13 hp=76
+[demo-evidence] Pet[24] ASSIST hit Monster[2004] dmg=8 for owner=13
+[demo-evidence] Avatar[14].reqAttack hit Monster[2004] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2004].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2004].receiveDamage dmg=15 attacker=14 hp=61
+[demo-evidence] Avatar[18].reqAttack hit Monster[2004] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2004].onDamaged attacker=Avatar[18] -> counter-aggro
+[demo-evidence] Avatar[2004].receiveDamage dmg=15 attacker=18 hp=46
+[demo-evidence] Avatar[19].reqAttack hit Monster[2004] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2004].onDamaged attacker=Avatar[19] -> counter-aggro
+[demo-evidence] Avatar[2004].receiveDamage dmg=15 attacker=19 hp=31
+[demo-evidence] Avatar[16].reqAttack hit Monster[2004] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2004].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2004].receiveDamage dmg=15 attacker=16 hp=16
+[demo-evidence] Avatar[17].reqAttack hit Monster[2004] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2004].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2004].receiveDamage dmg=15 attacker=17 hp=1
+[demo-evidence] Avatar[15].reqAttack hit Monster[2004] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2004].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2004].receiveDamage dmg=15 attacker=15 hp=0
+[demo-evidence] Monster[2004] DIED (killer=15)
+[demo-evidence] Monster[2004] KILLED by Avatar[15] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[15] LEVEL UP -> 2 (experience=50)
+[demo-evidence] bots Avatar[15] onLevelUp level=2
+[demo-evidence] hot-reload heartbeat tick 300 (main loop GIL window)
+[demo-evidence] Avatar[2010].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(10.000000, 0.000000, 10.000000), ref=true
+[demo-evidence] Avatar[2011].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(-10.000000, 0.000000, 10.000000), ref=true
+[demo-evidence] Avatar[2012].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, -15.000000), ref=true
+[demo-evidence] Avatar[2013].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(14.000000, 0.000000, -6.000000), ref=true
+[demo-evidence] Avatar[2014].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(-14.000000, 0.000000, -4.000000), ref=true
+[demo-evidence] Space cell[2] monsters respawned: [2010, 2011, 2012, 2013, 2014]
+[demo-evidence] hot-reload heartbeat tick 300 (main loop GIL window)
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2014] AI IDLE -> WANDER (pos=-14.0,0.0,-4.0)
+[demo-evidence] Monster[2012] AI IDLE -> WANDER (pos=0.0,0.0,-15.0)
+[demo-evidence] Monster[2013] AI IDLE -> WANDER (pos=14.0,0.0,-6.0)
+[demo-evidence] Monster[2011] AI IDLE -> WANDER (pos=-10.0,0.0,10.0)
+[demo-evidence] Monster[2010] AI IDLE -> WANDER (pos=10.0,0.0,10.0)
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2010] AI WANDER -> CHASE (pos=7.4,0.0,8.5)
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2010].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2010].receiveDamage dmg=8 attacker=13 hp=92
+[demo-evidence] Pet[24] ASSIST hit Monster[2010] dmg=8 for owner=13
+[demo-evidence] Monster[2011] AI WANDER -> CHASE (pos=-5.2,0.0,10.4)
+[demo-evidence] Monster[2010].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2010].receiveDamage dmg=8 attacker=13 hp=84
+[demo-evidence] Pet[24] ASSIST hit Monster[2010] dmg=8 for owner=13
+[demo-evidence] Monster[2010] AI CHASE -> ATTACK (pos=1.0,0.0,1.5)
+[demo-evidence] Avatar[13].receiveDamage dmg=25 attacker=2010 hp=20
+[demo-evidence] Avatar[13] radar push attacker=Monster[2010] via base
+[demo-evidence] Monster[2010] ATTACK hit Avatar[13] dmg=25 root=0 vs 4 mult=1.00 targetHp=20
+[demo-evidence] Avatar[13].onRadarPush attacker=2010 client=set
+[demo-evidence] bots Avatar[13] target Monster[2010] radar=(1.0,1.5)
+[demo-evidence] Avatar[18].reqAttack hit Monster[2010] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2010].onDamaged attacker=Avatar[18] -> counter-aggro
+[demo-evidence] Avatar[2010].receiveDamage dmg=15 attacker=18 hp=69
+[demo-evidence] Avatar[17].reqAttack hit Monster[2010] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2010].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2010].receiveDamage dmg=15 attacker=17 hp=54
+[demo-evidence] Avatar[16].reqAttack hit Monster[2010] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2010].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2010].receiveDamage dmg=15 attacker=16 hp=39
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Avatar[15].reqAttack hit Monster[2010] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2010].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2010].receiveDamage dmg=15 attacker=15 hp=24
+[demo-evidence] Avatar[21].reqAttack hit Monster[2010] dmg=15 root=5 vs 0 mult=1.00
+[demo-evidence] Monster[2010].onDamaged attacker=Avatar[21] -> counter-aggro
+[demo-evidence] Avatar[2010].receiveDamage dmg=15 attacker=21 hp=9
+[demo-evidence] Avatar[20].reqAttack hit Monster[2010] dmg=15 root=2 vs 0 mult=1.00
+[demo-evidence] Monster[2010].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2010].receiveDamage dmg=15 attacker=20 hp=0
+[demo-evidence] Monster[2010] DIED (killer=20)
+[demo-evidence] Monster[2010] KILLED by Avatar[20] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[20] LEVEL UP -> 3 (experience=100)
+[demo-evidence] bots Avatar[20] onLevelUp level=3
+[demo-evidence] Avatar[20] REALM UP QiRefining->Foundation exp=120 (writeToDB)
+[demo-evidence] bots Avatar[20] onRealmUp realm=1 count=1
+[demo-evidence] Avatar[20] PLACE FORMATION kind=gather id=27 owner=2 at (0.0,0.0)
+[demo-evidence] bots Avatar[20] onFormationPlaced kind=gather fid=27
+[demo-evidence] Pet[28] SAVED dbid=0 name=pet-bot12 owner=2
+[demo-evidence] Item[29] SAVED dbid=0 itemId=3001 count=1 owner=2
+[demo-evidence] Sect[26] SAVED dbid=1 name=sect-demo leader=1 members=2
+[demo-evidence] Avatar[20] SECT JOIN dbid=1 name=sect-demo members=2
+[demo-evidence] Avatar[20] ADOPT PET dbid=2 name=pet-bot12 roster=1
+[demo-evidence] Avatar[20] FORGE TALISMAN dbid=2 charges=3 power=40
+[demo-evidence] bots Avatar[20] onPetAdopted dbid=2 -> summon
+[demo-evidence] bots Avatar[20] onTalismanGained dbid=2 -> use
+[demo-evidence] Avatar[20] SUMMON PET dbid=2 name=pet-bot12 -> cell space=1
+[demo-evidence] Avatar[20] TALISMAN dbid=2 use -> charges=2 power=40
+[demo-evidence] Avatar[20] TALISMAN BLAST radius=6.0 power=40 hits=0
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2011].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2011].receiveDamage dmg=8 attacker=13 hp=92
+[demo-evidence] Pet[24] ASSIST hit Monster[2011] dmg=8 for owner=13
+[demo-evidence] Monster[2011].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2011].receiveDamage dmg=8 attacker=20 hp=84
+[demo-evidence] Pet[28] ASSIST hit Monster[2011] dmg=8 for owner=20
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2011].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2011].receiveDamage dmg=8 attacker=13 hp=76
+[demo-evidence] Pet[24] ASSIST hit Monster[2011] dmg=8 for owner=13
+[demo-evidence] Monster[2011] AI CHASE -> ATTACK (pos=-1.1,0.0,1.4)
+[demo-evidence] Avatar[13].receiveDamage dmg=25 attacker=2011 hp=20
+[demo-evidence] Avatar[13] radar push attacker=Monster[2011] via base
+[demo-evidence] Monster[2011] ATTACK hit Avatar[13] dmg=25 root=0 vs 4 mult=1.00 targetHp=20
+[demo-evidence] Monster[2014] AI WANDER -> CHASE (pos=-9.7,0.0,-5.2)
+[demo-evidence] Avatar[13].onRadarPush attacker=2011 client=set
+[demo-evidence] Monster[2011].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2011].receiveDamage dmg=8 attacker=20 hp=68
+[demo-evidence] Pet[28] ASSIST hit Monster[2011] dmg=8 for owner=20
+[demo-evidence] Monster[2012] AI WANDER -> CHASE (pos=-2.6,0.0,-11.6)
+[demo-evidence] bots Avatar[13] target Monster[2011] radar=(-1.1,1.4)
+[demo-evidence] Monster[2011].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2011].receiveDamage dmg=8 attacker=13 hp=60
+[demo-evidence] Pet[24] ASSIST hit Monster[2011] dmg=8 for owner=13
+[demo-evidence] Monster[2011].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2011].receiveDamage dmg=8 attacker=20 hp=52
+[demo-evidence] Pet[28] ASSIST hit Monster[2011] dmg=8 for owner=20
+[demo-evidence] Avatar[18].reqAttack hit Monster[2011] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2011].onDamaged attacker=Avatar[18] -> counter-aggro
+[demo-evidence] Avatar[2011].receiveDamage dmg=15 attacker=18 hp=37
+[demo-evidence] Avatar[21].reqAttack hit Monster[2011] dmg=15 root=5 vs 0 mult=1.00
+[demo-evidence] Monster[2011].onDamaged attacker=Avatar[21] -> counter-aggro
+[demo-evidence] Avatar[2011].receiveDamage dmg=15 attacker=21 hp=22
+[demo-evidence] Avatar[22].reqAttack hit Monster[2011] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2011].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2011].receiveDamage dmg=15 attacker=22 hp=7
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Avatar[17].reqAttack hit Monster[2011] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2011].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2011].receiveDamage dmg=15 attacker=17 hp=0
+[demo-evidence] Monster[2011] DIED (killer=17)
+[demo-evidence] Monster[2011] KILLED by Avatar[17] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[17] LEVEL UP -> 2 (experience=50)
+[demo-evidence] bots Avatar[17] onLevelUp level=2
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2006] AI WANDER -> CHASE (pos=11.1,0.0,1.5)
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2014].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2014].receiveDamage dmg=8 attacker=13 hp=92
+[demo-evidence] Pet[24] ASSIST hit Monster[2014] dmg=8 for owner=13
+[demo-evidence] Monster[2014].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2014].receiveDamage dmg=8 attacker=20 hp=84
+[demo-evidence] Pet[28] ASSIST hit Monster[2014] dmg=8 for owner=20
+[demo-evidence] Avatar[16].reqAttack hit Monster[2014] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2014].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2014].receiveDamage dmg=15 attacker=16 hp=69
+[demo-evidence] Avatar[21].reqAttack hit Monster[2014] dmg=15 root=5 vs 0 mult=1.00
+[demo-evidence] Monster[2014].onDamaged attacker=Avatar[21] -> counter-aggro
+[demo-evidence] Avatar[2014].receiveDamage dmg=15 attacker=21 hp=54
+[demo-evidence] Avatar[18].reqAttack hit Monster[2014] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2014].onDamaged attacker=Avatar[18] -> counter-aggro
+[demo-evidence] Avatar[2014].receiveDamage dmg=15 attacker=18 hp=39
+[demo-evidence] Avatar[19].reqAttack hit Monster[2014] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2014].onDamaged attacker=Avatar[19] -> counter-aggro
+[demo-evidence] Avatar[2014].receiveDamage dmg=15 attacker=19 hp=24
+[demo-evidence] Avatar[13].reqAttack hit Monster[2014] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2014].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2014].receiveDamage dmg=15 attacker=13 hp=9
+[demo-evidence] Avatar[22].reqAttack hit Monster[2014] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2014].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2014].receiveDamage dmg=15 attacker=22 hp=0
+[demo-evidence] Monster[2014] DIED (killer=22)
+[demo-evidence] Monster[2014] KILLED by Avatar[22] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[15].reqAttack hit Monster[2012] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Avatar[22] LEVEL UP -> 3 (experience=100)
+[demo-evidence] Monster[2012].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2012].receiveDamage dmg=15 attacker=15 hp=85
+[demo-evidence] Avatar[14].reqAttack hit Monster[2012] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2012].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2012].receiveDamage dmg=15 attacker=14 hp=70
+[demo-evidence] Avatar[20].reqAttack hit Monster[2012] dmg=15 root=2 vs 0 mult=1.00
+[demo-evidence] Monster[2012].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2012].receiveDamage dmg=15 attacker=20 hp=55
+[demo-evidence] bots Avatar[22] onLevelUp level=3
+[demo-evidence] Avatar[22] REALM UP QiRefining->Foundation exp=120 (writeToDB)
+[demo-evidence] bots Avatar[22] onRealmUp realm=1 count=1
+[demo-evidence] Monster[2012].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2012].receiveDamage dmg=8 attacker=13 hp=47
+[demo-evidence] Pet[24] ASSIST hit Monster[2012] dmg=8 for owner=13
+[demo-evidence] Avatar[22] PLACE FORMATION kind=gather id=30 owner=3 at (0.0,0.0)
+[demo-evidence] bots Avatar[22] onFormationPlaced kind=gather fid=30
+[demo-evidence] Pet[31] SAVED dbid=0 name=pet-bot10 owner=3
+[demo-evidence] Item[32] SAVED dbid=0 itemId=3001 count=1 owner=3
+[demo-evidence] Sect[26] SAVED dbid=1 name=sect-demo leader=1 members=3
+[demo-evidence] Avatar[22] SECT JOIN dbid=1 name=sect-demo members=3
+[demo-evidence] Avatar[22] FORGE TALISMAN dbid=3 charges=3 power=40
+[demo-evidence] Avatar[22] ADOPT PET dbid=3 name=pet-bot10 roster=1
+[demo-evidence] Monster[2012] AI CHASE -> ATTACK (pos=-0.4,0.0,-1.8)
+[demo-evidence] Avatar[13].receiveDamage dmg=25 attacker=2012 hp=15
+[demo-evidence] Avatar[13] radar push attacker=Monster[2012] via base
+[demo-evidence] Monster[2012] ATTACK hit Avatar[13] dmg=25 root=0 vs 4 mult=1.00 targetHp=15
+[demo-evidence] Avatar[13].onRadarPush attacker=2012 client=set
+[demo-evidence] Monster[2012].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2012].receiveDamage dmg=8 attacker=20 hp=39
+[demo-evidence] Pet[28] ASSIST hit Monster[2012] dmg=8 for owner=20
+[demo-evidence] bots Avatar[13] target Monster[2012] radar=(-0.4,-1.8)
+[demo-evidence] bots Avatar[22] onTalismanGained dbid=3 -> use
+[demo-evidence] bots Avatar[22] onPetAdopted dbid=3 -> summon
+[demo-evidence] Avatar[22] TALISMAN dbid=3 use -> charges=2 power=40
+[demo-evidence] Avatar[22] SUMMON PET dbid=3 name=pet-bot10 -> cell space=1
+[demo-evidence] Monster[2012].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2012].receiveDamage dmg=40 attacker=22 hp=0
+[demo-evidence] Monster[2012] DIED (killer=22)
+[demo-evidence] Monster[2012] KILLED by Avatar[22] reward gold+=10 exp+=30
+[demo-evidence] Avatar[22] LEVEL UP -> 4 (experience=150)
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[22] TALISMAN BLAST radius=6.0 power=40 hits=1
+[demo-evidence] bots Avatar[22] onLevelUp level=4
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2006].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2006].receiveDamage dmg=8 attacker=13 hp=92
+[demo-evidence] Pet[24] ASSIST hit Monster[2006] dmg=8 for owner=13
+[demo-evidence] Monster[2006].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2006].receiveDamage dmg=8 attacker=22 hp=84
+[demo-evidence] Pet[31] ASSIST hit Monster[2006] dmg=8 for owner=22
+[demo-evidence] Monster[2006].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2006].receiveDamage dmg=8 attacker=20 hp=76
+[demo-evidence] Pet[28] ASSIST hit Monster[2006] dmg=8 for owner=20
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Avatar[21].reqAttack hit Monster[2006] dmg=15 root=5 vs 0 mult=1.00
+[demo-evidence] Monster[2006].onDamaged attacker=Avatar[21] -> counter-aggro
+[demo-evidence] Avatar[2006].receiveDamage dmg=15 attacker=21 hp=61
+[demo-evidence] Avatar[16].reqAttack hit Monster[2006] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2006].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2006].receiveDamage dmg=15 attacker=16 hp=46
+[demo-evidence] Avatar[20].reqAttack hit Monster[2006] dmg=15 root=2 vs 0 mult=1.00
+[demo-evidence] Monster[2006].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2006].receiveDamage dmg=15 attacker=20 hp=31
+[demo-evidence] Avatar[14].reqAttack hit Monster[2006] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2006].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2006].receiveDamage dmg=15 attacker=14 hp=16
+[demo-evidence] Avatar[19].reqAttack hit Monster[2006] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2006].onDamaged attacker=Avatar[19] -> counter-aggro
+[demo-evidence] Avatar[2006].receiveDamage dmg=15 attacker=19 hp=1
+[demo-evidence] Avatar[22].reqAttack hit Monster[2006] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2006].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2006].receiveDamage dmg=15 attacker=22 hp=0
+[demo-evidence] Monster[2006] DIED (killer=22)
+[demo-evidence] Monster[2006] KILLED by Avatar[22] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[22] LEVEL UP -> 5 (experience=200)
+[demo-evidence] bots Avatar[22] onLevelUp level=5
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Avatar[2015].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(10.000000, 0.000000, 10.000000), ref=true
+[demo-evidence] Avatar[2016].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(-10.000000, 0.000000, 10.000000), ref=true
+[demo-evidence] Avatar[2017].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, -15.000000), ref=true
+[demo-evidence] Avatar[2018].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(-14.000000, 0.000000, -4.000000), ref=true
+[demo-evidence] Avatar[2019].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(18.000000, 0.000000, 2.000000), ref=true
+[demo-evidence] Space cell[2] monsters respawned: [2015, 2016, 2017, 2018, 2019]
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2018] AI IDLE -> WANDER (pos=-14.0,0.0,-4.0)
+[demo-evidence] Monster[2019] AI IDLE -> WANDER (pos=18.0,0.0,2.0)
+[demo-evidence] Monster[2016] AI IDLE -> WANDER (pos=-10.0,0.0,10.0)
+[demo-evidence] Monster[2017] AI IDLE -> WANDER (pos=0.0,0.0,-15.0)
+[demo-evidence] Monster[2015] AI IDLE -> WANDER (pos=10.0,0.0,10.0)
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2016] AI WANDER -> CHASE (pos=-8.9,0.0,6.9)
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[23] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2016].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2016].receiveDamage dmg=8 attacker=13 hp=92
+[demo-evidence] Pet[24] ASSIST hit Monster[2016] dmg=8 for owner=13
+[demo-evidence] Monster[2016].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2016].receiveDamage dmg=8 attacker=22 hp=84
+[demo-evidence] Pet[31] ASSIST hit Monster[2016] dmg=8 for owner=22
+[demo-evidence] Monster[2016].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2016].receiveDamage dmg=8 attacker=20 hp=76
+[demo-evidence] Pet[28] ASSIST hit Monster[2016] dmg=8 for owner=20
+[demo-evidence] Formation[23] EXPIRE kind=? owner=1 (lifetime 30.0s)
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2016].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2016].receiveDamage dmg=8 attacker=13 hp=68
+[demo-evidence] Pet[24] ASSIST hit Monster[2016] dmg=8 for owner=13
+[demo-evidence] Monster[2017] AI WANDER -> CHASE (pos=2.1,0.0,-11.7)
+[demo-evidence] Monster[2013] AI WANDER -> CHASE (pos=10.3,0.0,-5.1)
+[demo-evidence] Monster[2016].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2016].receiveDamage dmg=8 attacker=20 hp=60
+[demo-evidence] Pet[28] ASSIST hit Monster[2016] dmg=8 for owner=20
+[demo-evidence] Monster[2016].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2016].receiveDamage dmg=8 attacker=22 hp=52
+[demo-evidence] Pet[31] ASSIST hit Monster[2016] dmg=8 for owner=22
+[demo-evidence] Monster[2016].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2016].receiveDamage dmg=8 attacker=13 hp=44
+[demo-evidence] Pet[24] ASSIST hit Monster[2016] dmg=8 for owner=13
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2016] AI CHASE -> ATTACK (pos=-1.2,0.0,1.4)
+[demo-evidence] Avatar[13].receiveDamage dmg=25 attacker=2016 hp=150
+[demo-evidence] Avatar[13] radar push attacker=Monster[2016] via base
+[demo-evidence] Monster[2016] ATTACK hit Avatar[13] dmg=25 root=0 vs 4 mult=1.00 targetHp=150
+[demo-evidence] Avatar[13].onRadarPush attacker=2016 client=set
+[demo-evidence] Monster[2016].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2016].receiveDamage dmg=8 attacker=22 hp=36
+[demo-evidence] Pet[31] ASSIST hit Monster[2016] dmg=8 for owner=22
+[demo-evidence] Monster[2016].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2016].receiveDamage dmg=8 attacker=20 hp=28
+[demo-evidence] Pet[28] ASSIST hit Monster[2016] dmg=8 for owner=20
+[demo-evidence] bots Avatar[13] target Monster[2016] radar=(-1.2,1.4)
+[demo-evidence] Avatar[13] REALM UP Foundation->GoldenCore exp=300 (writeToDB)
+[demo-evidence] bots Avatar[13] onRealmUp realm=2 count=2
+[demo-evidence] Sect[1] CHAT from=bot6 len=37 members=3
+[demo-evidence] bots Avatar[20] SECT CHAT from=bot6 text=sect-demo is open, fellow cultivators
+[demo-evidence] bots Avatar[22] SECT CHAT from=bot6 text=sect-demo is open, fellow cultivators
+[demo-evidence] bots Avatar[13] SECT CHAT from=bot6 text=sect-demo is open, fellow cultivators
+[demo-evidence] Monster[2016].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2016].receiveDamage dmg=8 attacker=13 hp=20
+[demo-evidence] Pet[24] ASSIST hit Monster[2016] dmg=8 for owner=13
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2016].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2016].receiveDamage dmg=8 attacker=22 hp=12
+[demo-evidence] Pet[31] ASSIST hit Monster[2016] dmg=8 for owner=22
+[demo-evidence] Monster[2016].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2016].receiveDamage dmg=8 attacker=20 hp=4
+[demo-evidence] Pet[28] ASSIST hit Monster[2016] dmg=8 for owner=20
+[demo-evidence] Monster[2018] AI WANDER -> CHASE (pos=-11.9,0.0,0.7)
+[demo-evidence] Avatar[18].reqAttack hit Monster[2016] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2016].onDamaged attacker=Avatar[18] -> counter-aggro
+[demo-evidence] Avatar[2016].receiveDamage dmg=15 attacker=18 hp=0
+[demo-evidence] Monster[2016] DIED (killer=18)
+[demo-evidence] Monster[2016] KILLED by Avatar[18] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[18] LEVEL UP -> 2 (experience=50)
+[demo-evidence] bots Avatar[18] onLevelUp level=2
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2017].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2017].receiveDamage dmg=8 attacker=13 hp=92
+[demo-evidence] Pet[24] ASSIST hit Monster[2017] dmg=8 for owner=13
+[demo-evidence] Monster[2017].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2017].receiveDamage dmg=8 attacker=20 hp=84
+[demo-evidence] Pet[28] ASSIST hit Monster[2017] dmg=8 for owner=20
+[demo-evidence] Monster[2017].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2017].receiveDamage dmg=8 attacker=22 hp=76
+[demo-evidence] Pet[31] ASSIST hit Monster[2017] dmg=8 for owner=22
+[demo-evidence] Monster[2015] AI WANDER -> CHASE (pos=10.1,0.0,5.7)
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2017].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2017].receiveDamage dmg=8 attacker=13 hp=68
+[demo-evidence] Pet[24] ASSIST hit Monster[2017] dmg=8 for owner=13
+[demo-evidence] Monster[2017].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2017].receiveDamage dmg=8 attacker=20 hp=60
+[demo-evidence] Pet[28] ASSIST hit Monster[2017] dmg=8 for owner=20
+[demo-evidence] Monster[2017].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2017].receiveDamage dmg=8 attacker=22 hp=52
+[demo-evidence] Pet[31] ASSIST hit Monster[2017] dmg=8 for owner=22
+[demo-evidence] Monster[2017] AI CHASE -> ATTACK (pos=0.3,0.0,-1.9)
+[demo-evidence] Avatar[22].receiveDamage dmg=25 attacker=2017 hp=365
+[demo-evidence] Avatar[22] radar push attacker=Monster[2017] via base
+[demo-evidence] Monster[2017] ATTACK hit Avatar[22] dmg=25 root=0 vs 4 mult=1.00 targetHp=365
+[demo-evidence] Avatar[22].onRadarPush attacker=2017 client=set
+[demo-evidence] bots Avatar[22] target Monster[2017] radar=(0.3,-1.9)
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2017].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2017].receiveDamage dmg=8 attacker=13 hp=44
+[demo-evidence] Pet[24] ASSIST hit Monster[2017] dmg=8 for owner=13
+[demo-evidence] Monster[2013].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2013].receiveDamage dmg=8 attacker=22 hp=92
+[demo-evidence] Pet[31] ASSIST hit Monster[2013] dmg=8 for owner=22
+[demo-evidence] Monster[2013].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2013].receiveDamage dmg=8 attacker=20 hp=84
+[demo-evidence] Pet[28] ASSIST hit Monster[2013] dmg=8 for owner=20
+[demo-evidence] Monster[2013] AI CHASE -> ATTACK (pos=1.6,0.0,-0.9)
+[demo-evidence] Avatar[20].receiveDamage dmg=25 attacker=2013 hp=370
+[demo-evidence] Avatar[20] radar push attacker=Monster[2013] via base
+[demo-evidence] Monster[2013] ATTACK hit Avatar[20] dmg=25 root=0 vs 2 mult=1.00 targetHp=370
+[demo-evidence] Avatar[20].onRadarPush attacker=2013 client=set
+[demo-evidence] bots Avatar[20] target Monster[2013] radar=(1.6,-0.9)
+[demo-evidence] Avatar[14].reqAttack hit Monster[2013] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2013].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2013].receiveDamage dmg=15 attacker=14 hp=69
+[demo-evidence] Avatar[15].reqAttack hit Monster[2013] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2013].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2013].receiveDamage dmg=15 attacker=15 hp=54
+[demo-evidence] Avatar[18].reqAttack hit Monster[2013] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2013].onDamaged attacker=Avatar[18] -> counter-aggro
+[demo-evidence] Avatar[2013].receiveDamage dmg=15 attacker=18 hp=39
+[demo-evidence] Avatar[22].reqAttack hit Monster[2013] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2013].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2013].receiveDamage dmg=15 attacker=22 hp=24
+[demo-evidence] Avatar[19].reqAttack hit Monster[2013] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2013].onDamaged attacker=Avatar[19] -> counter-aggro
+[demo-evidence] Avatar[2013].receiveDamage dmg=15 attacker=19 hp=9
+[demo-evidence] Avatar[13].reqAttack hit Monster[2013] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2013].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2013].receiveDamage dmg=15 attacker=13 hp=0
+[demo-evidence] Monster[2013] DIED (killer=13)
+[demo-evidence] Monster[2013] KILLED by Avatar[13] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[13] LEVEL UP -> 7 (experience=330)
+[demo-evidence] Avatar[21].reqAttack hit Monster[2017] dmg=15 root=5 vs 0 mult=1.00
+[demo-evidence] Monster[2017].onDamaged attacker=Avatar[21] -> counter-aggro
+[demo-evidence] Avatar[2017].receiveDamage dmg=15 attacker=21 hp=29
+[demo-evidence] Avatar[16].reqAttack hit Monster[2017] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2017].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2017].receiveDamage dmg=15 attacker=16 hp=14
+[demo-evidence] Avatar[17].reqAttack hit Monster[2017] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2017].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2017].receiveDamage dmg=15 attacker=17 hp=0
+[demo-evidence] Monster[2017] DIED (killer=17)
+[demo-evidence] Monster[2017] KILLED by Avatar[17] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[17] LEVEL UP -> 3 (experience=100)
+[demo-evidence] Avatar[20].reqAttack hit Monster[2018] dmg=15 root=2 vs 0 mult=1.00
+[demo-evidence] Monster[2018].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2018].receiveDamage dmg=15 attacker=20 hp=85
+[demo-evidence] bots Avatar[17] onLevelUp level=3
+[demo-evidence] bots Avatar[13] onLevelUp level=7
+[demo-evidence] Avatar[17] REALM UP QiRefining->Foundation exp=120 (writeToDB)
+[demo-evidence] bots Avatar[17] onRealmUp realm=1 count=1
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2018].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2018].receiveDamage dmg=8 attacker=13 hp=77
+[demo-evidence] Pet[24] ASSIST hit Monster[2018] dmg=8 for owner=13
+[demo-evidence] Avatar[17] PLACE FORMATION kind=gather id=33 owner=4 at (0.0,0.0)
+[demo-evidence] Monster[2018] AI CHASE -> ATTACK (pos=-2.0,0.0,0.1)
+[demo-evidence] Avatar[13].receiveDamage dmg=25 attacker=2018 hp=150
+[demo-evidence] Avatar[13] radar push attacker=Monster[2018] via base
+[demo-evidence] Monster[2018] ATTACK hit Avatar[13] dmg=25 root=0 vs 4 mult=1.00 targetHp=150
+[demo-evidence] Monster[2018].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2018].receiveDamage dmg=8 attacker=22 hp=69
+[demo-evidence] Avatar[13].onRadarPush attacker=2018 client=set
+[demo-evidence] Pet[31] ASSIST hit Monster[2018] dmg=8 for owner=22
+[demo-evidence] Monster[2018].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2018].receiveDamage dmg=8 attacker=20 hp=61
+[demo-evidence] Pet[28] ASSIST hit Monster[2018] dmg=8 for owner=20
+[demo-evidence] bots Avatar[17] onFormationPlaced kind=gather fid=33
+[demo-evidence] bots Avatar[13] target Monster[2018] radar=(-2.0,0.1)
+[demo-evidence] Pet[34] SAVED dbid=0 name=pet-bot5 owner=4
+[demo-evidence] Item[35] SAVED dbid=0 itemId=3001 count=1 owner=4
+[demo-evidence] Sect[26] SAVED dbid=1 name=sect-demo leader=1 members=4
+[demo-evidence] Avatar[17] SECT JOIN dbid=1 name=sect-demo members=4
+[demo-evidence] Avatar[17] ADOPT PET dbid=4 name=pet-bot5 roster=1
+[demo-evidence] Avatar[17] FORGE TALISMAN dbid=4 charges=3 power=40
+[demo-evidence] bots Avatar[17] onPetAdopted dbid=4 -> summon
+[demo-evidence] bots Avatar[17] onTalismanGained dbid=4 -> use
+[demo-evidence] Avatar[17] SUMMON PET dbid=4 name=pet-bot5 -> cell space=1
+[demo-evidence] Avatar[17] TALISMAN dbid=4 use -> charges=2 power=40
+[demo-evidence] Monster[2018].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2018].receiveDamage dmg=40 attacker=17 hp=21
+[demo-evidence] Avatar[17] TALISMAN BLAST radius=6.0 power=40 hits=1
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2018].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2018].receiveDamage dmg=8 attacker=13 hp=13
+[demo-evidence] Pet[24] ASSIST hit Monster[2018] dmg=8 for owner=13
+[demo-evidence] Monster[2018].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2018].receiveDamage dmg=8 attacker=22 hp=5
+[demo-evidence] Pet[31] ASSIST hit Monster[2018] dmg=8 for owner=22
+[demo-evidence] Monster[2018].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2018].receiveDamage dmg=8 attacker=20 hp=0
+[demo-evidence] Monster[2018] DIED (killer=20)
+[demo-evidence] Monster[2018] KILLED by Avatar[20] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[20] LEVEL UP -> 4 (experience=170)
+[demo-evidence] Pet[28] ASSIST hit Monster[2018] dmg=8 for owner=20
+[demo-evidence] bots Avatar[20] onLevelUp level=4
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2015].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2015].receiveDamage dmg=8 attacker=13 hp=92
+[demo-evidence] Pet[24] ASSIST hit Monster[2015] dmg=8 for owner=13
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2015].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2015].receiveDamage dmg=8 attacker=22 hp=84
+[demo-evidence] Pet[31] ASSIST hit Monster[2015] dmg=8 for owner=22
+[demo-evidence] Monster[2015].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2015].receiveDamage dmg=8 attacker=20 hp=76
+[demo-evidence] Pet[28] ASSIST hit Monster[2015] dmg=8 for owner=20
+[demo-evidence] Monster[2015].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2015].receiveDamage dmg=8 attacker=17 hp=68
+[demo-evidence] Pet[34] ASSIST hit Monster[2015] dmg=8 for owner=17
+[demo-evidence] Avatar[14].reqAttack hit Monster[2015] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2015].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2015].receiveDamage dmg=15 attacker=14 hp=53
+[demo-evidence] Avatar[15].reqAttack hit Monster[2015] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2015].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2015].receiveDamage dmg=15 attacker=15 hp=38
+[demo-evidence] Monster[2015].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2015].receiveDamage dmg=8 attacker=13 hp=30
+[demo-evidence] Pet[24] ASSIST hit Monster[2015] dmg=8 for owner=13
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2015] AI CHASE -> ATTACK (pos=1.7,0.0,0.6)
+[demo-evidence] Avatar[13].receiveDamage dmg=25 attacker=2015 hp=145
+[demo-evidence] Avatar[13] radar push attacker=Monster[2015] via base
+[demo-evidence] Monster[2015] ATTACK hit Avatar[13] dmg=25 root=0 vs 4 mult=1.00 targetHp=145
+[demo-evidence] Monster[2015].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[13].onRadarPush attacker=2015 client=set
+[demo-evidence] Avatar[2015].receiveDamage dmg=8 attacker=20 hp=22
+[demo-evidence] Pet[28] ASSIST hit Monster[2015] dmg=8 for owner=20
+[demo-evidence] Monster[2015].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2015].receiveDamage dmg=8 attacker=22 hp=14
+[demo-evidence] Pet[31] ASSIST hit Monster[2015] dmg=8 for owner=22
+[demo-evidence] bots Avatar[13] target Monster[2015] radar=(1.7,0.6)
+[demo-evidence] Monster[2015].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2015].receiveDamage dmg=8 attacker=17 hp=6
+[demo-evidence] Pet[34] ASSIST hit Monster[2015] dmg=8 for owner=17
+[demo-evidence] Monster[2015].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2015].receiveDamage dmg=8 attacker=13 hp=0
+[demo-evidence] Monster[2015] DIED (killer=13)
+[demo-evidence] Monster[2015] KILLED by Avatar[13] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[13] LEVEL UP -> 9 (experience=420)
+[demo-evidence] Pet[24] ASSIST hit Monster[2015] dmg=8 for owner=13
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] bots Avatar[13] onLevelUp level=9
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Avatar[2020].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(10.000000, 0.000000, 10.000000), ref=true
+[demo-evidence] Avatar[2021].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(-10.000000, 0.000000, 10.000000), ref=true
+[demo-evidence] Avatar[2022].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, -15.000000), ref=true
+[demo-evidence] Avatar[2023].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(14.000000, 0.000000, -6.000000), ref=true
+[demo-evidence] Avatar[2024].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(-14.000000, 0.000000, -4.000000), ref=true
+[demo-evidence] Space cell[2] monsters respawned: [2020, 2021, 2022, 2023, 2024]
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2024] AI IDLE -> WANDER (pos=-14.0,0.0,-4.0)
+[demo-evidence] Monster[2022] AI IDLE -> WANDER (pos=0.0,0.0,-15.0)
+[demo-evidence] Monster[2023] AI IDLE -> WANDER (pos=14.0,0.0,-6.0)
+[demo-evidence] Monster[2021] AI IDLE -> WANDER (pos=-10.0,0.0,10.0)
+[demo-evidence] Monster[2020] AI IDLE -> WANDER (pos=10.0,0.0,10.0)
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2024] AI WANDER -> CHASE (pos=-11.0,0.0,-3.7)
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2022] AI WANDER -> CHASE (pos=2.3,0.0,-11.1)
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[27] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2024].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2024].receiveDamage dmg=8 attacker=13 hp=92
+[demo-evidence] Pet[24] ASSIST hit Monster[2024] dmg=8 for owner=13
+[demo-evidence] Monster[2024].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2024].receiveDamage dmg=8 attacker=22 hp=84
+[demo-evidence] Pet[31] ASSIST hit Monster[2024] dmg=8 for owner=22
+[demo-evidence] Monster[2024].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2024].receiveDamage dmg=8 attacker=20 hp=76
+[demo-evidence] Pet[28] ASSIST hit Monster[2024] dmg=8 for owner=20
+[demo-evidence] Monster[2024].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2024].receiveDamage dmg=8 attacker=17 hp=68
+[demo-evidence] Pet[34] ASSIST hit Monster[2024] dmg=8 for owner=17
+[demo-evidence] Monster[2024].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2024].receiveDamage dmg=8 attacker=13 hp=60
+[demo-evidence] Pet[24] ASSIST hit Monster[2024] dmg=8 for owner=13
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2024] AI CHASE -> ATTACK (pos=-1.7,0.0,-0.7)
+[demo-evidence] Avatar[13].receiveDamage dmg=25 attacker=2024 hp=270
+[demo-evidence] Avatar[13] radar push attacker=Monster[2024] via base
+[demo-evidence] Monster[2024] ATTACK hit Avatar[13] dmg=25 root=0 vs 4 mult=1.00 targetHp=270
+[demo-evidence] Monster[2024].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2024].receiveDamage dmg=8 attacker=22 hp=52
+[demo-evidence] Avatar[13].onRadarPush attacker=2024 client=set
+[demo-evidence] Pet[31] ASSIST hit Monster[2024] dmg=8 for owner=22
+[demo-evidence] Monster[2024].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2024].receiveDamage dmg=8 attacker=20 hp=44
+[demo-evidence] Pet[28] ASSIST hit Monster[2024] dmg=8 for owner=20
+[demo-evidence] bots Avatar[13] target Monster[2024] radar=(-1.7,-0.7)
+[demo-evidence] Monster[2024].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2024].receiveDamage dmg=8 attacker=17 hp=36
+[demo-evidence] Pet[34] ASSIST hit Monster[2024] dmg=8 for owner=17
+[demo-evidence] Avatar[15].reqAttack hit Monster[2024] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2024].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2024].receiveDamage dmg=15 attacker=15 hp=21
+[demo-evidence] Avatar[17].reqAttack hit Monster[2024] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2024].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2024].receiveDamage dmg=15 attacker=17 hp=6
+[demo-evidence] Avatar[20].reqAttack hit Monster[2024] dmg=15 root=2 vs 0 mult=1.00
+[demo-evidence] Monster[2024].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2024].receiveDamage dmg=15 attacker=20 hp=0
+[demo-evidence] Monster[2024] DIED (killer=20)
+[demo-evidence] Monster[2024] KILLED by Avatar[20] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[20] LEVEL UP -> 5 (experience=220)
+[demo-evidence] Avatar[21].reqAttack hit Monster[2022] dmg=15 root=5 vs 0 mult=1.00
+[demo-evidence] Monster[2022].onDamaged attacker=Avatar[21] -> counter-aggro
+[demo-evidence] Avatar[2022].receiveDamage dmg=15 attacker=21 hp=85
+[demo-evidence] Avatar[19].reqAttack hit Monster[2022] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2022].onDamaged attacker=Avatar[19] -> counter-aggro
+[demo-evidence] Avatar[2022].receiveDamage dmg=15 attacker=19 hp=70
+[demo-evidence] Avatar[13].reqAttack hit Monster[2022] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2022].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2022].receiveDamage dmg=15 attacker=13 hp=55
+[demo-evidence] Avatar[18].reqAttack hit Monster[2022] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2022].onDamaged attacker=Avatar[18] -> counter-aggro
+[demo-evidence] Avatar[2022].receiveDamage dmg=15 attacker=18 hp=40
+[demo-evidence] Avatar[14].reqAttack hit Monster[2022] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2022].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2022].receiveDamage dmg=15 attacker=14 hp=25
+[demo-evidence] Avatar[22].reqAttack hit Monster[2022] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2022].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2022].receiveDamage dmg=15 attacker=22 hp=10
+[demo-evidence] Avatar[16].reqAttack hit Monster[2022] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2022].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2022].receiveDamage dmg=15 attacker=16 hp=0
+[demo-evidence] Monster[2022] DIED (killer=16)
+[demo-evidence] Monster[2022] KILLED by Avatar[16] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[16] LEVEL UP -> 2 (experience=50)
+[demo-evidence] bots Avatar[16] onLevelUp level=2
+[demo-evidence] bots Avatar[20] onLevelUp level=5
+[demo-evidence] Formation[27] EXPIRE kind=? owner=2 (lifetime 30.0s)
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2023] AI WANDER -> CHASE (pos=10.9,0.0,-3.6)
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[30] EXPIRE kind=? owner=3 (lifetime 30.0s)
+[demo-evidence] Monster[2023].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2023].receiveDamage dmg=8 attacker=13 hp=92
+[demo-evidence] Pet[24] ASSIST hit Monster[2023] dmg=8 for owner=13
+[demo-evidence] Monster[2020] AI WANDER -> CHASE (pos=10.0,0.0,6.6)
+[demo-evidence] Monster[2023].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2023].receiveDamage dmg=8 attacker=20 hp=84
+[demo-evidence] Pet[28] ASSIST hit Monster[2023] dmg=8 for owner=20
+[demo-evidence] Monster[2023].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2023].receiveDamage dmg=8 attacker=22 hp=76
+[demo-evidence] Pet[31] ASSIST hit Monster[2023] dmg=8 for owner=22
+[demo-evidence] Monster[2023].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2023].receiveDamage dmg=8 attacker=17 hp=68
+[demo-evidence] Pet[34] ASSIST hit Monster[2023] dmg=8 for owner=17
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2023].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2023].receiveDamage dmg=8 attacker=13 hp=60
+[demo-evidence] Pet[24] ASSIST hit Monster[2023] dmg=8 for owner=13
+[demo-evidence] Monster[2023] AI CHASE -> ATTACK (pos=1.7,0.0,-0.7)
+[demo-evidence] Avatar[13].receiveDamage dmg=25 attacker=2023 hp=295
+[demo-evidence] Avatar[13] radar push attacker=Monster[2023] via base
+[demo-evidence] Monster[2023] ATTACK hit Avatar[13] dmg=25 root=0 vs 4 mult=1.00 targetHp=295
+[demo-evidence] Monster[2019] AI WANDER -> CHASE (pos=10.9,0.0,1.1)
+[demo-evidence] Avatar[13].onRadarPush attacker=2023 client=set
+[demo-evidence] Monster[2023].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2023].receiveDamage dmg=8 attacker=22 hp=52
+[demo-evidence] Pet[31] ASSIST hit Monster[2023] dmg=8 for owner=22
+[demo-evidence] Monster[2023].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2023].receiveDamage dmg=8 attacker=20 hp=44
+[demo-evidence] Pet[28] ASSIST hit Monster[2023] dmg=8 for owner=20
+[demo-evidence] bots Avatar[13] target Monster[2023] radar=(1.7,-0.7)
+[demo-evidence] Monster[2023].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2023].receiveDamage dmg=8 attacker=17 hp=36
+[demo-evidence] Pet[34] ASSIST hit Monster[2023] dmg=8 for owner=17
+[demo-evidence] Monster[2023].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2023].receiveDamage dmg=8 attacker=13 hp=28
+[demo-evidence] Pet[24] ASSIST hit Monster[2023] dmg=8 for owner=13
+[demo-evidence] Monster[2023].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2023].receiveDamage dmg=8 attacker=22 hp=20
+[demo-evidence] Pet[31] ASSIST hit Monster[2023] dmg=8 for owner=22
+[demo-evidence] Monster[2023].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2023].receiveDamage dmg=8 attacker=20 hp=12
+[demo-evidence] Pet[28] ASSIST hit Monster[2023] dmg=8 for owner=20
+[demo-evidence] Monster[2023].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2023].receiveDamage dmg=8 attacker=17 hp=4
+[demo-evidence] Pet[34] ASSIST hit Monster[2023] dmg=8 for owner=17
+[demo-evidence] Avatar[15].reqAttack hit Monster[2023] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2023].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2023].receiveDamage dmg=15 attacker=15 hp=0
+[demo-evidence] Monster[2023] DIED (killer=15)
+[demo-evidence] Monster[2023] KILLED by Avatar[15] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[15] LEVEL UP -> 3 (experience=100)
+[demo-evidence] bots Avatar[15] onLevelUp level=3
+[demo-evidence] Avatar[15] REALM UP QiRefining->Foundation exp=120 (writeToDB)
+[demo-evidence] bots Avatar[15] onRealmUp realm=1 count=1
+[demo-evidence] Monster[2020].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2020].receiveDamage dmg=8 attacker=13 hp=92
+[demo-evidence] Pet[24] ASSIST hit Monster[2020] dmg=8 for owner=13
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Avatar[15] PLACE FORMATION kind=gather id=36 owner=5 at (0.0,0.0)
+[demo-evidence] Monster[2020].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2020].receiveDamage dmg=8 attacker=20 hp=84
+[demo-evidence] Pet[28] ASSIST hit Monster[2020] dmg=8 for owner=20
+[demo-evidence] Monster[2020].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2020].receiveDamage dmg=8 attacker=22 hp=76
+[demo-evidence] Pet[31] ASSIST hit Monster[2020] dmg=8 for owner=22
+[demo-evidence] bots Avatar[15] onFormationPlaced kind=gather fid=36
+[demo-evidence] Pet[37] SAVED dbid=0 name=pet-bot4 owner=5
+[demo-evidence] Item[38] SAVED dbid=0 itemId=3001 count=1 owner=5
+[demo-evidence] Sect[26] SAVED dbid=1 name=sect-demo leader=1 members=5
+[demo-evidence] Avatar[15] SECT JOIN dbid=1 name=sect-demo members=5
+[demo-evidence] Avatar[15] FORGE TALISMAN dbid=5 charges=3 power=40
+[demo-evidence] Avatar[15] ADOPT PET dbid=5 name=pet-bot4 roster=1
+[demo-evidence] Monster[2020].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2020].receiveDamage dmg=8 attacker=17 hp=68
+[demo-evidence] Pet[34] ASSIST hit Monster[2020] dmg=8 for owner=17
+[demo-evidence] bots Avatar[15] onTalismanGained dbid=5 -> use
+[demo-evidence] bots Avatar[15] onPetAdopted dbid=5 -> summon
+[demo-evidence] Avatar[15] TALISMAN dbid=5 use -> charges=2 power=40
+[demo-evidence] Avatar[15] SUMMON PET dbid=5 name=pet-bot4 -> cell space=1
+[demo-evidence] Monster[2020].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2020].receiveDamage dmg=40 attacker=15 hp=28
+[demo-evidence] Monster[2019].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2019].receiveDamage dmg=40 attacker=15 hp=60
+[demo-evidence] Avatar[15] TALISMAN BLAST radius=6.0 power=40 hits=2
+[demo-evidence] Monster[2020].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2020].receiveDamage dmg=8 attacker=13 hp=20
+[demo-evidence] Pet[24] ASSIST hit Monster[2020] dmg=8 for owner=13
+[demo-evidence] Monster[2020].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2020].receiveDamage dmg=8 attacker=22 hp=12
+[demo-evidence] Pet[31] ASSIST hit Monster[2020] dmg=8 for owner=22
+[demo-evidence] Monster[2020] AI CHASE -> ATTACK (pos=1.7,0.0,1.1)
+[demo-evidence] Avatar[22].receiveDamage dmg=25 attacker=2020 hp=575
+[demo-evidence] Avatar[22] radar push attacker=Monster[2020] via base
+[demo-evidence] Monster[2020] ATTACK hit Avatar[22] dmg=25 root=0 vs 4 mult=1.00 targetHp=575
+[demo-evidence] Monster[2020].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2020].receiveDamage dmg=8 attacker=20 hp=4
+[demo-evidence] Avatar[22].onRadarPush attacker=2020 client=set
+[demo-evidence] Pet[28] ASSIST hit Monster[2020] dmg=8 for owner=20
+[demo-evidence] bots Avatar[22] target Monster[2020] radar=(1.7,1.1)
+[demo-evidence] Monster[2020].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2020].receiveDamage dmg=8 attacker=15 hp=0
+[demo-evidence] Monster[2020] DIED (killer=15)
+[demo-evidence] Monster[2020] KILLED by Avatar[15] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Pet[37] ASSIST hit Monster[2020] dmg=8 for owner=15
+[demo-evidence] Monster[2019].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[15] LEVEL UP -> 4 (experience=150)
+[demo-evidence] Avatar[2019].receiveDamage dmg=8 attacker=17 hp=52
+[demo-evidence] Pet[34] ASSIST hit Monster[2019] dmg=8 for owner=17
+[demo-evidence] bots Avatar[15] onLevelUp level=4
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2019].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2019].receiveDamage dmg=8 attacker=13 hp=44
+[demo-evidence] Pet[24] ASSIST hit Monster[2019] dmg=8 for owner=13
+[demo-evidence] Monster[2019] AI CHASE -> ATTACK (pos=1.8,0.0,0.2)
+[demo-evidence] Avatar[13].receiveDamage dmg=25 attacker=2019 hp=285
+[demo-evidence] Avatar[13] radar push attacker=Monster[2019] via base
+[demo-evidence] Monster[2019] ATTACK hit Avatar[13] dmg=25 root=0 vs 4 mult=1.00 targetHp=285
+[demo-evidence] Monster[2019].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2019].receiveDamage dmg=8 attacker=20 hp=36
+[demo-evidence] Avatar[13].onRadarPush attacker=2019 client=set
+[demo-evidence] Pet[28] ASSIST hit Monster[2019] dmg=8 for owner=20
+[demo-evidence] Monster[2019].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2019].receiveDamage dmg=8 attacker=22 hp=28
+[demo-evidence] Pet[31] ASSIST hit Monster[2019] dmg=8 for owner=22
+[demo-evidence] bots Avatar[13] target Monster[2019] radar=(1.8,0.2)
+[demo-evidence] Monster[2019].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2019].receiveDamage dmg=8 attacker=15 hp=20
+[demo-evidence] Pet[37] ASSIST hit Monster[2019] dmg=8 for owner=15
+[demo-evidence] Monster[2019].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2019].receiveDamage dmg=8 attacker=17 hp=12
+[demo-evidence] Pet[34] ASSIST hit Monster[2019] dmg=8 for owner=17
+[demo-evidence] Avatar[14].reqAttack hit Monster[2019] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2019].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2019].receiveDamage dmg=15 attacker=14 hp=0
+[demo-evidence] Monster[2019] DIED (killer=14)
+[demo-evidence] Monster[2019] KILLED by Avatar[14] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[14] LEVEL UP -> 3 (experience=100)
+[demo-evidence] bots Avatar[14] onLevelUp level=3
+[demo-evidence] Avatar[14] REALM UP QiRefining->Foundation exp=120 (writeToDB)
+[demo-evidence] bots Avatar[14] onRealmUp realm=1 count=1
+[demo-evidence] Avatar[14] PLACE FORMATION kind=gather id=39 owner=6 at (0.0,0.0)
+[demo-evidence] bots Avatar[14] onFormationPlaced kind=gather fid=39
+[demo-evidence] Pet[40] SAVED dbid=0 name=pet-bot8 owner=6
+[demo-evidence] Item[41] SAVED dbid=0 itemId=3001 count=1 owner=6
+[demo-evidence] Sect[26] SAVED dbid=1 name=sect-demo leader=1 members=6
+[demo-evidence] Avatar[14] SECT JOIN dbid=1 name=sect-demo members=6
+[demo-evidence] Avatar[14] FORGE TALISMAN dbid=6 charges=3 power=40
+[demo-evidence] Avatar[14] ADOPT PET dbid=6 name=pet-bot8 roster=1
+[demo-evidence] bots Avatar[14] onTalismanGained dbid=6 -> use
+[demo-evidence] bots Avatar[14] onPetAdopted dbid=6 -> summon
+[demo-evidence] Avatar[14] TALISMAN dbid=6 use -> charges=2 power=40
+[demo-evidence] Avatar[14] TALISMAN BLAST radius=6.0 power=40 hits=0
+[demo-evidence] Avatar[14] SUMMON PET dbid=6 name=pet-bot8 -> cell space=1
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Avatar[2025].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(10.000000, 0.000000, 10.000000), ref=true
+[demo-evidence] Avatar[2026].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, -15.000000), ref=true
+[demo-evidence] Avatar[2027].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(14.000000, 0.000000, -6.000000), ref=true
+[demo-evidence] Avatar[2028].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(-14.000000, 0.000000, -4.000000), ref=true
+[demo-evidence] Avatar[2029].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(18.000000, 0.000000, 2.000000), ref=true
+[demo-evidence] Space cell[2] monsters respawned: [2025, 2026, 2027, 2028, 2029]
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2029] AI IDLE -> WANDER (pos=18.0,0.0,2.0)
+[demo-evidence] Monster[2027] AI IDLE -> WANDER (pos=14.0,0.0,-6.0)
+[demo-evidence] Monster[2028] AI IDLE -> WANDER (pos=-14.0,0.0,-4.0)
+[demo-evidence] Monster[2026] AI IDLE -> WANDER (pos=0.0,0.0,-15.0)
+[demo-evidence] Monster[2025] AI IDLE -> WANDER (pos=10.0,0.0,10.0)
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2027] AI WANDER -> CHASE (pos=11.1,0.0,-3.9)
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2025] AI WANDER -> CHASE (pos=6.0,0.0,10.2)
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2027].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2027].receiveDamage dmg=8 attacker=13 hp=92
+[demo-evidence] Pet[24] ASSIST hit Monster[2027] dmg=8 for owner=13
+[demo-evidence] Monster[2027].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2027].receiveDamage dmg=8 attacker=22 hp=84
+[demo-evidence] Pet[31] ASSIST hit Monster[2027] dmg=8 for owner=22
+[demo-evidence] Monster[2027].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2027].receiveDamage dmg=8 attacker=20 hp=76
+[demo-evidence] Pet[28] ASSIST hit Monster[2027] dmg=8 for owner=20
+[demo-evidence] Monster[2027].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2027].receiveDamage dmg=8 attacker=17 hp=68
+[demo-evidence] Pet[34] ASSIST hit Monster[2027] dmg=8 for owner=17
+[demo-evidence] Monster[2027].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2027].receiveDamage dmg=8 attacker=15 hp=60
+[demo-evidence] Pet[37] ASSIST hit Monster[2027] dmg=8 for owner=15
+[demo-evidence] Monster[2027].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2027].receiveDamage dmg=8 attacker=14 hp=52
+[demo-evidence] Pet[40] ASSIST hit Monster[2027] dmg=8 for owner=14
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2027].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2027].receiveDamage dmg=8 attacker=13 hp=44
+[demo-evidence] Pet[24] ASSIST hit Monster[2027] dmg=8 for owner=13
+[demo-evidence] Monster[2027].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2027].receiveDamage dmg=8 attacker=22 hp=36
+[demo-evidence] Pet[31] ASSIST hit Monster[2027] dmg=8 for owner=22
+[demo-evidence] Monster[2027].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2027].receiveDamage dmg=8 attacker=20 hp=28
+[demo-evidence] Pet[28] ASSIST hit Monster[2027] dmg=8 for owner=20
+[demo-evidence] Monster[2027] AI CHASE -> ATTACK (pos=1.7,0.0,-0.6)
+[demo-evidence] Avatar[20].receiveDamage dmg=25 attacker=2027 hp=690
+[demo-evidence] Avatar[20] radar push attacker=Monster[2027] via base
+[demo-evidence] Monster[2027] ATTACK hit Avatar[20] dmg=25 root=0 vs 2 mult=1.00 targetHp=690
+[demo-evidence] Avatar[20].onRadarPush attacker=2027 client=set
+[demo-evidence] bots Avatar[20] target Monster[2027] radar=(1.7,-0.6)
+[demo-evidence] Monster[2027].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2027].receiveDamage dmg=8 attacker=14 hp=20
+[demo-evidence] Pet[40] ASSIST hit Monster[2027] dmg=8 for owner=14
+[demo-evidence] Monster[2027].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2027].receiveDamage dmg=8 attacker=17 hp=12
+[demo-evidence] Pet[34] ASSIST hit Monster[2027] dmg=8 for owner=17
+[demo-evidence] Monster[2027].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2027].receiveDamage dmg=8 attacker=15 hp=4
+[demo-evidence] Pet[37] ASSIST hit Monster[2027] dmg=8 for owner=15
+[demo-evidence] Avatar[13].reqAttack hit Monster[2027] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2027].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2027].receiveDamage dmg=15 attacker=13 hp=0
+[demo-evidence] Monster[2027] DIED (killer=13)
+[demo-evidence] Monster[2027] KILLED by Avatar[13] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[13] LEVEL UP -> 11 (experience=530)
+[demo-evidence] bots Avatar[13] onLevelUp level=11
+[demo-evidence] Monster[2025].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2025].receiveDamage dmg=8 attacker=13 hp=92
+[demo-evidence] Pet[24] ASSIST hit Monster[2025] dmg=8 for owner=13
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2025].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2025].receiveDamage dmg=8 attacker=22 hp=84
+[demo-evidence] Pet[31] ASSIST hit Monster[2025] dmg=8 for owner=22
+[demo-evidence] Monster[2025].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2025].receiveDamage dmg=8 attacker=20 hp=76
+[demo-evidence] Pet[28] ASSIST hit Monster[2025] dmg=8 for owner=20
+[demo-evidence] Monster[2025].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2025].receiveDamage dmg=8 attacker=14 hp=68
+[demo-evidence] Pet[40] ASSIST hit Monster[2025] dmg=8 for owner=14
+[demo-evidence] Monster[2025].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2025].receiveDamage dmg=8 attacker=15 hp=60
+[demo-evidence] Pet[37] ASSIST hit Monster[2025] dmg=8 for owner=15
+[demo-evidence] Monster[2025].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2025].receiveDamage dmg=8 attacker=17 hp=52
+[demo-evidence] Pet[34] ASSIST hit Monster[2025] dmg=8 for owner=17
+[demo-evidence] Monster[2025].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2025].receiveDamage dmg=8 attacker=13 hp=44
+[demo-evidence] Pet[24] ASSIST hit Monster[2025] dmg=8 for owner=13
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2025].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2025].receiveDamage dmg=8 attacker=22 hp=36
+[demo-evidence] Pet[31] ASSIST hit Monster[2025] dmg=8 for owner=22
+[demo-evidence] Monster[2025] AI CHASE -> ATTACK (pos=1.0,0.0,1.5)
+[demo-evidence] Avatar[22].receiveDamage dmg=25 attacker=2025 hp=680
+[demo-evidence] Avatar[22] radar push attacker=Monster[2025] via base
+[demo-evidence] Monster[2025] ATTACK hit Avatar[22] dmg=25 root=0 vs 4 mult=1.00 targetHp=680
+[demo-evidence] Monster[2025].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2025].receiveDamage dmg=8 attacker=20 hp=28
+[demo-evidence] Avatar[22].onRadarPush attacker=2025 client=set
+[demo-evidence] Pet[28] ASSIST hit Monster[2025] dmg=8 for owner=20
+[demo-evidence] bots Avatar[22] target Monster[2025] radar=(1.0,1.5)
+[demo-evidence] Monster[2025].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2025].receiveDamage dmg=8 attacker=15 hp=20
+[demo-evidence] Pet[37] ASSIST hit Monster[2025] dmg=8 for owner=15
+[demo-evidence] Monster[2025].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2025].receiveDamage dmg=8 attacker=14 hp=12
+[demo-evidence] Pet[40] ASSIST hit Monster[2025] dmg=8 for owner=14
+[demo-evidence] Monster[2025].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2025].receiveDamage dmg=8 attacker=17 hp=4
+[demo-evidence] Pet[34] ASSIST hit Monster[2025] dmg=8 for owner=17
+[demo-evidence] Monster[2025].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2025].receiveDamage dmg=8 attacker=13 hp=0
+[demo-evidence] Monster[2025] DIED (killer=13)
+[demo-evidence] Monster[2025] KILLED by Avatar[13] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[13] LEVEL UP -> 12 (experience=580)
+[demo-evidence] Pet[24] ASSIST hit Monster[2025] dmg=8 for owner=13
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] bots Avatar[13] onLevelUp level=12
+[demo-evidence] Monster[2028] AI WANDER -> CHASE (pos=-10.1,0.0,-4.1)
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[33] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2028].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2028].receiveDamage dmg=8 attacker=13 hp=92
+[demo-evidence] Pet[24] ASSIST hit Monster[2028] dmg=8 for owner=13
+[demo-evidence] Monster[2028].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2028].receiveDamage dmg=8 attacker=20 hp=84
+[demo-evidence] Pet[28] ASSIST hit Monster[2028] dmg=8 for owner=20
+[demo-evidence] Monster[2028].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2028].receiveDamage dmg=8 attacker=22 hp=76
+[demo-evidence] Pet[31] ASSIST hit Monster[2028] dmg=8 for owner=22
+[demo-evidence] Monster[2028].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2028].receiveDamage dmg=8 attacker=14 hp=68
+[demo-evidence] Pet[40] ASSIST hit Monster[2028] dmg=8 for owner=14
+[demo-evidence] Monster[2028].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2028].receiveDamage dmg=8 attacker=17 hp=60
+[demo-evidence] Pet[34] ASSIST hit Monster[2028] dmg=8 for owner=17
+[demo-evidence] Monster[2028].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2028].receiveDamage dmg=8 attacker=15 hp=52
+[demo-evidence] Pet[37] ASSIST hit Monster[2028] dmg=8 for owner=15
+[demo-evidence] Formation[33] EXPIRE kind=? owner=4 (lifetime 30.0s)
+[demo-evidence] Monster[2028].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2028].receiveDamage dmg=8 attacker=13 hp=44
+[demo-evidence] Pet[24] ASSIST hit Monster[2028] dmg=8 for owner=13
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2028].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2028].receiveDamage dmg=8 attacker=22 hp=36
+[demo-evidence] Pet[31] ASSIST hit Monster[2028] dmg=8 for owner=22
+[demo-evidence] Monster[2028].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2028].receiveDamage dmg=8 attacker=20 hp=28
+[demo-evidence] Pet[28] ASSIST hit Monster[2028] dmg=8 for owner=20
+[demo-evidence] Monster[2028].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2028].receiveDamage dmg=8 attacker=14 hp=20
+[demo-evidence] Pet[40] ASSIST hit Monster[2028] dmg=8 for owner=14
+[demo-evidence] Monster[2028].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2028].receiveDamage dmg=8 attacker=17 hp=12
+[demo-evidence] Pet[34] ASSIST hit Monster[2028] dmg=8 for owner=17
+[demo-evidence] Monster[2028].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2028].receiveDamage dmg=8 attacker=15 hp=4
+[demo-evidence] Pet[37] ASSIST hit Monster[2028] dmg=8 for owner=15
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2028].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2028].receiveDamage dmg=8 attacker=13 hp=0
+[demo-evidence] Monster[2028] DIED (killer=13)
+[demo-evidence] Monster[2028] KILLED by Avatar[13] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[13] LEVEL UP -> 13 (experience=630)
+[demo-evidence] Pet[24] ASSIST hit Monster[2028] dmg=8 for owner=13
+[demo-evidence] bots Avatar[13] onLevelUp level=13
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2026] AI WANDER -> CHASE (pos=4.2,0.0,-10.9)
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] hot-reload heartbeat tick 600 (main loop GIL window)
+[demo-evidence] Avatar[2030].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(10.000000, 0.000000, 10.000000), ref=true
+[demo-evidence] Avatar[2031].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(14.000000, 0.000000, -6.000000), ref=true
+[demo-evidence] Avatar[2032].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(-14.000000, 0.000000, -4.000000), ref=true
+[demo-evidence] Space cell[2] monsters respawned: [2030, 2031, 2032]
+[demo-evidence] hot-reload heartbeat tick 600 (main loop GIL window)
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2026].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2026].receiveDamage dmg=8 attacker=22 hp=92
+[demo-evidence] Pet[31] ASSIST hit Monster[2026] dmg=8 for owner=22
+[demo-evidence] Monster[2031] AI IDLE -> WANDER (pos=14.0,0.0,-6.0)
+[demo-evidence] Monster[2032] AI IDLE -> WANDER (pos=-14.0,0.0,-4.0)
+[demo-evidence] Monster[2030] AI IDLE -> WANDER (pos=10.0,0.0,10.0)
+[demo-evidence] Monster[2026].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2026].receiveDamage dmg=8 attacker=20 hp=84
+[demo-evidence] Pet[28] ASSIST hit Monster[2026] dmg=8 for owner=20
+[demo-evidence] Monster[2021] AI WANDER -> CHASE (pos=-6.9,0.0,8.0)
+[demo-evidence] Monster[2026].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2026].receiveDamage dmg=8 attacker=14 hp=76
+[demo-evidence] Pet[40] ASSIST hit Monster[2026] dmg=8 for owner=14
+[demo-evidence] Monster[2026].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2026].receiveDamage dmg=8 attacker=15 hp=68
+[demo-evidence] Pet[37] ASSIST hit Monster[2026] dmg=8 for owner=15
+[demo-evidence] Monster[2026].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2026].receiveDamage dmg=8 attacker=17 hp=60
+[demo-evidence] Pet[34] ASSIST hit Monster[2026] dmg=8 for owner=17
+[demo-evidence] Monster[2026].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2026].receiveDamage dmg=8 attacker=13 hp=52
+[demo-evidence] Pet[24] ASSIST hit Monster[2026] dmg=8 for owner=13
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2026].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2026].receiveDamage dmg=8 attacker=22 hp=44
+[demo-evidence] Pet[31] ASSIST hit Monster[2026] dmg=8 for owner=22
+[demo-evidence] Monster[2026].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2026].receiveDamage dmg=8 attacker=20 hp=36
+[demo-evidence] Pet[28] ASSIST hit Monster[2026] dmg=8 for owner=20
+[demo-evidence] Monster[2026].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2026].receiveDamage dmg=8 attacker=17 hp=28
+[demo-evidence] Pet[34] ASSIST hit Monster[2026] dmg=8 for owner=17
+[demo-evidence] Monster[2026].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2026].receiveDamage dmg=8 attacker=14 hp=20
+[demo-evidence] Pet[40] ASSIST hit Monster[2026] dmg=8 for owner=14
+[demo-evidence] Monster[2026].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2026].receiveDamage dmg=8 attacker=15 hp=12
+[demo-evidence] Pet[37] ASSIST hit Monster[2026] dmg=8 for owner=15
+[demo-evidence] Avatar[13].reqAttack hit Monster[2026] dmg=15 root=4 vs 0 mult=1.00
+[demo-evidence] Monster[2026].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2026].receiveDamage dmg=15 attacker=13 hp=0
+[demo-evidence] Monster[2026] DIED (killer=13)
+[demo-evidence] Monster[2026] KILLED by Avatar[13] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[13] LEVEL UP -> 14 (experience=680)
+[demo-evidence] bots Avatar[13] onLevelUp level=14
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2021].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2021].receiveDamage dmg=8 attacker=13 hp=92
+[demo-evidence] Pet[24] ASSIST hit Monster[2021] dmg=8 for owner=13
+[demo-evidence] Monster[2021].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2021].receiveDamage dmg=8 attacker=22 hp=84
+[demo-evidence] Pet[31] ASSIST hit Monster[2021] dmg=8 for owner=22
+[demo-evidence] Monster[2031] AI WANDER -> CHASE (pos=10.4,0.0,-3.3)
+[demo-evidence] Monster[2021].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2021].receiveDamage dmg=8 attacker=20 hp=76
+[demo-evidence] Pet[28] ASSIST hit Monster[2021] dmg=8 for owner=20
+[demo-evidence] Monster[2021].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2021].receiveDamage dmg=8 attacker=17 hp=68
+[demo-evidence] Pet[34] ASSIST hit Monster[2021] dmg=8 for owner=17
+[demo-evidence] Monster[2021].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2021].receiveDamage dmg=8 attacker=14 hp=60
+[demo-evidence] Pet[40] ASSIST hit Monster[2021] dmg=8 for owner=14
+[demo-evidence] Monster[2021].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2021].receiveDamage dmg=8 attacker=15 hp=52
+[demo-evidence] Pet[37] ASSIST hit Monster[2021] dmg=8 for owner=15
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2021].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2021].receiveDamage dmg=8 attacker=13 hp=44
+[demo-evidence] Pet[24] ASSIST hit Monster[2021] dmg=8 for owner=13
+[demo-evidence] Monster[2021].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2021].receiveDamage dmg=8 attacker=20 hp=36
+[demo-evidence] Pet[28] ASSIST hit Monster[2021] dmg=8 for owner=20
+[demo-evidence] Monster[2021].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2021].receiveDamage dmg=8 attacker=22 hp=28
+[demo-evidence] Pet[31] ASSIST hit Monster[2021] dmg=8 for owner=22
+[demo-evidence] Monster[2021].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2021].receiveDamage dmg=8 attacker=17 hp=20
+[demo-evidence] Pet[34] ASSIST hit Monster[2021] dmg=8 for owner=17
+[demo-evidence] Monster[2021].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2021].receiveDamage dmg=8 attacker=14 hp=12
+[demo-evidence] Pet[40] ASSIST hit Monster[2021] dmg=8 for owner=14
+[demo-evidence] Monster[2021].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2021].receiveDamage dmg=8 attacker=15 hp=4
+[demo-evidence] Pet[37] ASSIST hit Monster[2021] dmg=8 for owner=15
+[demo-evidence] Avatar[17].reqAttack hit Monster[2021] dmg=15 root=1 vs 0 mult=1.00
+[demo-evidence] Monster[2021].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2021].receiveDamage dmg=15 attacker=17 hp=0
+[demo-evidence] Monster[2021] DIED (killer=17)
+[demo-evidence] Monster[2021] KILLED by Avatar[17] reward gold+=10 exp+=30
+[demo-evidence] Inventory addItem itemId=1 asked=1 added=1 slots=1
+[demo-evidence] Avatar[17] LEVEL UP -> 4 (experience=150)
+[demo-evidence] bots Avatar[17] onLevelUp level=4
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Formation[36] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2031].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2031].receiveDamage dmg=8 attacker=22 hp=92
+[demo-evidence] Pet[31] ASSIST hit Monster[2031] dmg=8 for owner=22
+[demo-evidence] Monster[2031].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2031].receiveDamage dmg=8 attacker=20 hp=84
+[demo-evidence] Pet[28] ASSIST hit Monster[2031] dmg=8 for owner=20
+[demo-evidence] Monster[2031].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2031].receiveDamage dmg=8 attacker=17 hp=76
+[demo-evidence] Pet[34] ASSIST hit Monster[2031] dmg=8 for owner=17
+[demo-evidence] Monster[2031].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2031].receiveDamage dmg=8 attacker=14 hp=68
+[demo-evidence] Pet[40] ASSIST hit Monster[2031] dmg=8 for owner=14
+[demo-evidence] Monster[2031].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2031].receiveDamage dmg=8 attacker=15 hp=60
+[demo-evidence] Pet[37] ASSIST hit Monster[2031] dmg=8 for owner=15
+[demo-evidence] Monster[2031].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2031].receiveDamage dmg=8 attacker=13 hp=52
+[demo-evidence] Pet[24] ASSIST hit Monster[2031] dmg=8 for owner=13
+[demo-evidence] Formation[39] GATHER ring heal hp+5 targets=[13, 14, 15, 16, 17, 18, 19, 20, 21, 22] radius=8.0
+[demo-evidence] Monster[2031].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2031].receiveDamage dmg=8 attacker=22 hp=44
+[demo-evidence] Pet[31] ASSIST hit Monster[2031] dmg=8 for owner=22
+[demo-evidence] Monster[2031].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2031].receiveDamage dmg=8 attacker=20 hp=36
+[demo-evidence] Pet[28] ASSIST hit Monster[2031] dmg=8 for owner=20
+[demo-evidence] Monster[2031].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2031].receiveDamage dmg=8 attacker=14 hp=28
+[demo-evidence] Pet[40] ASSIST hit Monster[2031] dmg=8 for owner=14
+[demo-evidence] Monster[2031].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2031].receiveDamage dmg=8 attacker=17 hp=20
+[demo-evidence] Pet[34] ASSIST hit Monster[2031] dmg=8 for owner=17
+[demo-evidence] Monster[2031].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2031].receiveDamage dmg=8 attacker=15 hp=12
+[demo-evidence] Pet[37] ASSIST hit Monster[2031] dmg=8 for owner=15
+[demo-evidence] Avatar[18].reqAttack hit Monster[2031] dmg=15 root=3 vs 0 mult=1.00
+[demo-evidence] Monster[2031].onDamaged attacker=Avatar[18] -> counter-aggro
+[demo-evidence] Avatar[2031].receiveDamage dmg=15 attacker=18 hp=0
+[demo-evidence] Monster[2031] DIED (killer=18)
+
+# ... (3405 more lines truncated; counts in header)

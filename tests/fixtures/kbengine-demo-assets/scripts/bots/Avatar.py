@@ -27,6 +27,7 @@ class Avatar(KBEngine.Entity):
 		KBEngine.Entity.__init__(self)
 		self.lastTargetId = 0
 		self.aiMoving = False
+		self.realmUpCount = 0
 		INFO_MSG("bots Avatar[%s] client entity created, pos=%s" % (self.id, getattr(self, "position", None)))
 		msg = "bots Avatar[%s] client entity created (entity sync), pos=%s" % (self.id, getattr(self, "position", None))
 		evidenceLog(msg)
@@ -40,6 +41,13 @@ class Avatar(KBEngine.Entity):
 			# 换目标即重走位:登录同步窗口内发出的 cell 面调用会被引擎丢弃
 			# (真机:入场即发的 reqGoto 10/10 未达),下一推(受击雷达)补发即达。
 			self.aiMoving = False
+		# DEMO-GAME-023 combat-driven cultivation pump: radar pushes are the
+		# only reliable client-side heartbeat in the bots process (真机判例:
+		# onEnterWorld 不发/onHPChanged 非属性回调不触发,onLevelUp 仅击杀节拍),
+		# 每推一次 reqPractice,20 exp/推 过 REALM_EXP 阈值即 REALM UP。
+		# base entitycall 在本地自造的客户端实体(训练桩)上为 None,须守卫。
+		if self.base is not None:
+			self.base.reqPractice()
 		dist = ((self.position.x - x) ** 2 + (self.position.z - z) ** 2) ** 0.5
 		if dist <= DEMO_ATTACK_RANGE:
 			self.aiMoving = False
@@ -71,6 +79,11 @@ class Avatar(KBEngine.Entity):
 		"""
 		msg = "bots Avatar[%s] onEnterWorld pos=(%.1f,%.1f)" % (self.id, self.position.x, self.position.z)
 		evidenceLog(msg)
+		# DEMO-GAME-023 bot loop kick-off: cultivation starts with the first
+		# practice call; onHPChanged keeps pumping per damage tick so the
+		# realm threshold is reached inside the run window.
+		if self.base is not None:
+			self.base.reqPractice()
 
 	def onMoveOver(self, controllerId, userarg):
 		"""
@@ -96,25 +109,85 @@ class Avatar(KBEngine.Entity):
 	def onLevelUp(self, newLevel):
 		"""
 		Client method.(Avatar.def ClientMethods)
+		DEMO-GAME-023: kill cadence doubles as a practice pump beat.
 		"""
 		msg = "bots Avatar[%s] onLevelUp level=%s" % (self.id, newLevel)
 		evidenceLog(msg)
+		if self.base is not None:
+			self.base.reqPractice()
 
 	def onRealmUp(self, realm):
 		"""
 		Client method.(Avatar.def ClientMethods,修仙战役 DEMO-GAME-011)
+		DEMO-GAME-023 chain: first breakthrough places the formation;
+		second fires the founder's sect chat (roster long settled by then).
 		"""
-		msg = "bots Avatar[%s] onRealmUp realm=%s" % (self.id, realm)
+		self.realmUpCount += 1
+		msg = "bots Avatar[%s] onRealmUp realm=%s count=%i" % (self.id, realm, self.realmUpCount)
 		evidenceLog(msg)
+		if self.realmUpCount == 1:
+			if self.base is not None:
+				self.base.reqPlaceFormation("gather", self.position.x, self.position.z)
+		elif self.realmUpCount == 2 and getattr(self, "sectId", 0):
+			# founder 判据不用固定名(bot 名带动态客户端 id,023 真机判例):
+			# 第二次突破时已在宗即开口,宗门广播到达全员客户端。
+			if self.base is not None:
+				self.base.reqSectChat("sect-demo is open, fellow cultivators")
+
+	def onFormationPlaced(self, kind, formationId):
+		"""
+		Client method.(Avatar.def ClientMethods,DEMO-GAME-023 chain)
+		布阵回执后并行展开:收宠+炼符+建宗/入宗(角色分流,bot3 建宗)。
+		"""
+		msg = "bots Avatar[%s] onFormationPlaced kind=%s fid=%s" % (self.id, kind, formationId)
+		evidenceLog(msg)
+		if self.base is None:
+			return
+		self.base.reqAdoptPet("pet-" + str(getattr(self, "name", self.id)))
+		self.base.reqForgeTalisman()
+		if getattr(self, "name", "") == "bot3":
+			self.base.reqCreateSect("sect-demo")
+		else:
+			self.base.reqJoinSectByName("sect-demo")
+
+	def onPetAdopted(self, petDbid):
+		"""
+		Client method.(Avatar.def ClientMethods,DEMO-GAME-023 chain)
+		收宠回执→召唤身边(协战锚在 cell 侧 Pet ASSIST evidenceLog)。
+		"""
+		msg = "bots Avatar[%s] onPetAdopted dbid=%s -> summon" % (self.id, petDbid)
+		evidenceLog(msg)
+		if self.base is not None:
+			self.base.reqSummonPet(petDbid)
+
+	def onTalismanGained(self, talismanDbid):
+		"""
+		Client method.(Avatar.def ClientMethods,DEMO-GAME-023 chain)
+		炼符回执→即用(AOE 命中锚在 cell 侧 useTalismanBlast)。
+		"""
+		msg = "bots Avatar[%s] onTalismanGained dbid=%s -> use" % (self.id, talismanDbid)
+		evidenceLog(msg)
+		if self.base is not None:
+			self.base.reqUseTalisman(talismanDbid)
 
 	def onHPChanged(self, hp):
 		"""
 		Client method.(Avatar.def ClientMethods)
 		"""
 		DEBUG_MSG("bots Avatar.onHPChanged: %i" % hp)
-		if hp > 0 and not self.aiMoving and self.cell is not None:
-			# 受击即向最后雷达目标回击一次(近战贴脸状态)
-			self.cell.reqAttack(self.lastTargetId)
+		if hp > 0:
+			# DEMO-GAME-023: combat-driven cultivation pump (per damage tick)
+			if self.base is not None:
+				self.base.reqPractice()
+			if not self.aiMoving and self.cell is not None:
+				# 受击即向最后雷达目标回击一次(近战贴脸状态)
+				self.cell.reqAttack(self.lastTargetId)
+
+	def onSectChat(self, sender, text):
+		"""Sect channel push (DEMO-GAME-019/023): real implementation for the
+		stub declared above; anchor proves cross-entity roster broadcast."""
+		msg = "bots Avatar[%s] SECT CHAT from=%s text=%s" % (self.id, sender, text)
+		evidenceLog(msg)
 
 	def onBodySeized(self, a1, a2):
 		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
@@ -170,11 +243,6 @@ class Avatar(KBEngine.Entity):
 		the name and signature to exist)."""
 		pass
 
-	def onFormationPlaced(self, a1, a2):
-		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
-		with its own DEMO-GAME batch (engine checkDefMethod needs
-		the name and signature to exist)."""
-		pass
 
 	def onPartyInvite(self, a1, a2, a3):
 		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
@@ -206,11 +274,6 @@ class Avatar(KBEngine.Entity):
 		the name and signature to exist)."""
 		pass
 
-	def onSectChat(self, a1, a2):
-		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
-		with its own DEMO-GAME batch (engine checkDefMethod needs
-		the name and signature to exist)."""
-		pass
 
 	def onSeizeResult(self, a1):
 		"""Avatar bots-client Client face declared in Avatar.def; implementation lands

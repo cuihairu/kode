@@ -14,6 +14,12 @@ class Avatar(object):
 	def onRealmUp(self, realm):
 		print("Avatar.onRealmUp: %i" % realm)
 
+	def onPetAdopted(self, petDbid):
+		print("Avatar.onPetAdopted: %s" % petDbid)
+
+	def onTalismanGained(self, talismanDbid):
+		print("Avatar.onTalismanGained: %s" % talismanDbid)
+
 	def onBodySeized(self, a1, a2):
 		"""Avatar client Client face declared in Avatar.def; implementation lands
 		with its own DEMO-GAME batch (engine checkDefMethod needs

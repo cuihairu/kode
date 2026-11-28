@@ -11,10 +11,12 @@ DEMO_SPACE_INDEX = 1
 
 # 迷你 ARPG 战斗常数:见 common/DemoConsts.py(base/cell 共用)
 from DemoConsts import DEMO_BAG_CAPACITY, DEMO_LEVEL_UP_STEP, DEMO_RESPAWN_DELAY, DEMO_TALISMAN_RADIUS
+from DemoConsts import DEMO_TALISMAN_ITEM_ID, DEMO_TALISMAN_CHARGES, DEMO_TALISMAN_POWER
 from Spaces import spaceByIndex
 
 TIMER_RESPAWN = 1
 TIMER_FORMATION_PLACE = 2
+TIMER_JOIN_SECT_BY_NAME = 3
 
 
 class Avatar(KBEngine.Proxy):
@@ -22,6 +24,7 @@ class Avatar(KBEngine.Proxy):
 		KBEngine.Proxy.__init__(self)
 		self.lastAttackAt = 0.0
 		self._pendingFormations = []
+		self._pendingJoinSectName = None
 		INFO_MSG("Avatar[%i] created, name=%s" % (self.id, self.name))
 		msg = "Avatar[%i] created, name=%s -> enterSpace(%i)" % (self.id, self.name, DEMO_SPACE_INDEX)
 		evidenceLog(msg)
@@ -63,6 +66,10 @@ class Avatar(KBEngine.Proxy):
 		# 主灵根换算成 UINT8 桥属性,createCellEntity 前落 base 侧即随 cellData
 		# 进 cell(引擎建 cellData 收 cell 可见面初值)。
 		self.dominantRoot = cultivation.dominant_root(self.spiritRoots)
+		# 023 真机判例:CELL_PUBLIC 属性在 base 侧直赋值=Python 平属性,
+		# 引擎 descriptor 不在、永不入 cellData 流(022 root=0 vs 0 同源);
+		# 唯一真通道=实体 cellData dict(createCellData 构造期装配)。
+		self.cellData["dominantRoot"] = self.dominantRoot
 		msg = "Avatar[%i] enterSpace dominantRoot=%i (%s)" % (
 			self.id, self.dominantRoot,
 			cultivation.ROOT_KEYS[self.dominantRoot - 1] if self.dominantRoot else "none",
@@ -89,6 +96,9 @@ class Avatar(KBEngine.Proxy):
 		if userArg == TIMER_FORMATION_PLACE:
 			self._flushPendingFormations()
 			return
+		if userArg == TIMER_JOIN_SECT_BY_NAME:
+			self._retryJoinSectByName()
+			return
 		if userArg != TIMER_RESPAWN:
 			return
 		msg = "Avatar[%i] RESPAWN -> enterSpace(%i) (fresh cell, full hp)" % (self.id, DEMO_SPACE_INDEX)
@@ -97,10 +107,11 @@ class Avatar(KBEngine.Proxy):
 
 	def _flushPendingFormations(self):
 		"""Deferred placement queue (Space spawn convention: cell creation
-		never nested inside a creation flow)."""
+		never nested inside a creation flow). 023 真机判例:kind 是
+		CELL_PUBLIC 面,base 侧无 descriptor,读数走本地队列元组。"""
 		pending, self._pendingFormations = self._pendingFormations, []
 		space = spaceByIndex.get(DEMO_SPACE_INDEX)
-		for f in pending:
+		for f, kind in pending:
 			if f is None or f.isDestroyed:
 				continue
 			if space is None or space.cell is None:
@@ -108,41 +119,45 @@ class Avatar(KBEngine.Proxy):
 				continue
 			f.createCellEntity(space.cell)
 			msg = "Avatar[%i] PLACE FORMATION kind=%s id=%i owner=%i at (%.1f,%.1f)" % (
-				self.id, f.kind, f.id, self.dbid,
+				self.id, kind, f.id, self.databaseID,
 				f.cellData["position"][0], f.cellData["position"][2],
 			)
 			evidenceLog(msg)
 			if self.client is not None:
-				self.client.onFormationPlaced(f.kind, f.id)
+				self.client.onFormationPlaced(kind, f.id)
 
-	def reqPlaceFormation(self, kind):
+	def reqPlaceFormation(self, kind, x, z):
 		"""
 		Exposed.(DEMO-GAME-018: place a formation ring at the caster's feet;
 		gather heals, bind slows) Spawn position rides cellData["position"]
 		(BASEAPP streams cell position from cellData, entity_macro.h).
+		023 真机判例:base 侧无 self.position(位置在 cell 分身),
+		施法点由客户端随调用传入(镜像位置)。
 		"""
 		if kind not in cultivation.FORMATION_TYPES:
 			kind = "gather"
 		f = KBEngine.createEntityLocally("Formation", {
 			"kind": kind,
-			"ownerId": self.dbid,
+			"ownerId": self.databaseID,
 			"ownerEntityId": self.id,
 		})
 		if f is None:
 			ERROR_MSG("Avatar[%i].reqPlaceFormation: create Formation failed" % self.id)
 			return
-		f.cellData["position"] = (self.position.x, self.position.y, self.position.z)
-		self._pendingFormations.append(f)
+		f.cellData["position"] = (x, 0.0, z)
+		# kind 乘 cellData 通道进 cell(Monster 减速/圈治疗读取面)。
+		f.cellData["kind"] = kind
+		self._pendingFormations.append((f, kind))
 		self.addTimer(0.1, 0, TIMER_FORMATION_PLACE)
 	# ---- Sect (DEMO-GAME-019) ----
 
 	def _findSect(self, sectDbid):
 		return next((e for e in KBEngine.entities.values()
-			if getattr(e, "className", "") == "Sect" and e.dbid == sectDbid), None)
+			if getattr(e, "className", "") == "Sect" and e.databaseID == sectDbid), None)
 
 	def _memberInfo(self):
 		return {
-			"dbid": self.dbid,
+			"dbid": self.databaseID,
 			"name": self.name,
 			"realm": self.realm,
 			"rank": 0,
@@ -176,15 +191,19 @@ class Avatar(KBEngine.Proxy):
 				ERROR_MSG("Avatar[%i].reqCreateSect: writeToDB failed name=%s" % (self.id, name))
 				return
 			sect.members = [self._memberInfo()]
-			self.sectId = sect.dbid
+			self.sectId = sect.databaseID
 			self.sectName = sect.name
+			# DEMO-GAME-023: publish the unique-name registry key the
+			# checks above read (reqJoinSectByName consumer); until this
+			# write the key only existed in reqLeaveSect's delete path.
+			KBEngine.globalData["sectname:" + name] = sect.databaseID
 			msg = "Avatar[%i] SECT FOUNDED dbid=%i name=%s leader=%i" % (
-				self.id, sect.dbid, sect.name, self.dbid)
+				self.id, sect.databaseID, sect.name, self.databaseID)
 			evidenceLog(msg)
 			sect.writeToDB()
 		sect = KBEngine.createEntityLocally("Sect", {
 			"name": name,
-			"leaderDbid": self.dbid,
+			"leaderDbid": self.databaseID,
 			"members": [],
 		})
 		if sect is None:
@@ -208,15 +227,15 @@ class Avatar(KBEngine.Proxy):
 			if sect is None:
 				ERROR_MSG("Avatar[%i].reqJoinSect: sect %i not found" % (self.id, sectDbid))
 				return
-			if sect.full() or sect.hasMember(self.dbid):
+			if sect.full() or sect.hasMember(self.databaseID):
 				DEBUG_MSG("Avatar[%i].reqJoinSect: sect full or already member" % self.id)
 				return
 			sect.addMember(self._memberInfo())
-			self.sectId = sect.dbid
+			self.sectId = sect.databaseID
 			self.sectName = sect.name
 			sect.writeToDB()
 			msg = "Avatar[%i] SECT JOIN dbid=%i name=%s members=%i" % (
-				self.id, sect.dbid, sect.name, len(sect.members))
+				self.id, sect.databaseID, sect.name, len(sect.members))
 			evidenceLog(msg)
 
 		sect = self._findSect(sectDbid)
@@ -227,6 +246,47 @@ class Avatar(KBEngine.Proxy):
 		def onLoaded(success, sect):
 			join(sect if success else None)
 		KBEngine.createEntityFromDB(sectDbid, onLoaded)
+
+	def reqJoinSectByName(self, name):
+		"""
+		Exposed.(DEMO-GAME-023 按名入宗:globalData sectname 注册表→dbid)
+		建宗写库异步,后登录者可能先于注册键到达;未命中走基座计时器短重试。
+		"""
+		name = (name or "").strip()
+		if not name:
+			return
+		dbid = KBEngine.globalData.get("sectname:" + name)
+		if dbid:
+			self.reqJoinSect(dbid)
+			return
+		if self._pendingJoinSectName == name:
+			return
+		self._pendingJoinSectName = name
+		msg = "Avatar[%i] JOIN SECT BY NAME wait registry=%s" % (self.id, name)
+		evidenceLog(msg)
+		self.addTimer(2.0, 0, TIMER_JOIN_SECT_BY_NAME)
+
+	def _retryJoinSectByName(self):
+		"""TIMER_JOIN_SECT_BY_NAME 回调:注册键已到即入宗,未到再等一轮。"""
+		name = self._pendingJoinSectName
+		if name is None:
+			return
+		dbid = KBEngine.globalData.get("sectname:" + name)
+		if dbid:
+			self._pendingJoinSectName = None
+			self.reqJoinSect(dbid)
+			return
+		self._joinSectRetries = getattr(self, "_joinSectRetries", 0) + 1
+		if self._joinSectRetries <= 3:
+			self.addTimer(2.0, 0, TIMER_JOIN_SECT_BY_NAME)
+			return
+		# join-or-found(023 真机判例:bot 名带动态客户端 id,固定名 founder
+		# 判据恒假):注册键始终未现即自行建宗,unique-name+globalData 闸
+		# 保证首个到达者独赢,后来者走常规注册键入宗。
+		msg = "Avatar[%i] JOIN SECT BY NAME gave up=%s -> found" % (self.id, name)
+		evidenceLog(msg)
+		self._pendingJoinSectName = None
+		self.reqCreateSect(name)
 
 	def reqLeaveSect(self):
 		"""
@@ -240,7 +300,7 @@ class Avatar(KBEngine.Proxy):
 		if sect is None:
 			ERROR_MSG("Avatar[%i].reqLeaveSect: sect %i not loaded" % (self.id, sectDbid))
 			return
-		sect.removeMember(self.dbid)
+		sect.removeMember(self.databaseID)
 		self.sectId = 0
 		self.sectName = ""
 		if not len(sect.members):
@@ -256,7 +316,7 @@ class Avatar(KBEngine.Proxy):
 				self.id, sectDbid, sectName)
 			evidenceLog(msg)
 			return
-		if sect.leaderDbid == self.dbid:
+		if sect.leaderDbid == self.databaseID:
 			sect.leaderDbid = sect.members[0]["dbid"]
 			msg = "Sect[%i] LEADER TRANSFER -> %i" % (sectDbid, sect.leaderDbid)
 			evidenceLog(msg)
@@ -369,16 +429,16 @@ class Avatar(KBEngine.Proxy):
 					list(self.bag.items), itemId, removed, DEMO_BAG_CAPACITY)
 				self.bag.items = refunded
 				return
-			self.equipDepot.append({"dbid": item.dbid, "strengthen": 0})
+			self.equipDepot.append({"dbid": item.databaseID, "strengthen": 0})
 			msg = "Avatar[%i] DEPOSIT itemId=%i count=%i -> Item dbid=%i depot=%i" % (
-				self.id, itemId, removed, item.dbid, len(self.equipDepot))
+				self.id, itemId, removed, item.databaseID, len(self.equipDepot))
 			evidenceLog(msg)
 
 		item = KBEngine.createEntityLocally("Item", {
 			"itemId": itemId,
 			"itemType": 1,
 			"count": removed,
-			"ownerDbid": self.dbid,
+			"ownerDbid": self.databaseID,
 		})
 		if item is None:
 			ERROR_MSG("Avatar[%i].reqDepotDeposit: create Item failed" % self.id)
@@ -397,8 +457,8 @@ class Avatar(KBEngine.Proxy):
 			DEBUG_MSG("Avatar[%i].reqDepotWithdraw: dbid=%i not in depot" % (self.id, itemDbid))
 			return
 		item = next((e for e in KBEngine.entities.values()
-			if getattr(e, "dbid", 0) == itemDbid
-			and getattr(e, "ownerDbid", 0) == self.dbid), None)
+			if getattr(e, "databaseID", 0) == itemDbid
+			and getattr(e, "ownerDbid", 0) == self.databaseID), None)
 		if item is None:
 			DEBUG_MSG("Avatar[%i].reqDepotWithdraw: Item entity dbid=%i not local" % (self.id, itemDbid))
 			return
@@ -418,8 +478,8 @@ class Avatar(KBEngine.Proxy):
 	def _findOwnedEquip(self, equipDbid):
 		"""本机找归属装备实体(demo 规模线性扫,同 reqDepotWithdraw)。"""
 		return next((e for e in KBEngine.entities.values()
-			if getattr(e, "dbid", 0) == equipDbid
-			and getattr(e, "ownerDbid", 0) == self.dbid
+			if getattr(e, "databaseID", 0) == equipDbid
+			and getattr(e, "ownerDbid", 0) == self.databaseID
 			and getattr(e, "className", "") == "Equipment"), None)
 
 	def _recomputeAttrs(self, why):
@@ -457,15 +517,15 @@ class Avatar(KBEngine.Proxy):
 			if not success or equip is None:
 				ERROR_MSG("Avatar[%i].reqForgeEquip: writeToDB failed itemId=%i" % (self.id, itemId))
 				return
-			self.equipDepot.append({"dbid": equip.dbid, "strengthen": 0})
+			self.equipDepot.append({"dbid": equip.databaseID, "strengthen": 0})
 			msg = "Avatar[%i] FORGE Equipment dbid=%i itemId=%i slot=%s -> depot=%i" % (
-				self.id, equip.dbid, itemId, slot, len(self.equipDepot))
+				self.id, equip.databaseID, itemId, slot, len(self.equipDepot))
 			evidenceLog(msg)
 		equip = KBEngine.createEntityLocally("Equipment", {
 			"itemId": itemId,
 			"itemType": 2,
 			"count": 1,
-			"ownerDbid": self.dbid,
+			"ownerDbid": self.databaseID,
 			"slot": slot,
 			"realmReq": entry["realmReq"],
 			"bonus": dict(entry["bonus"]),
@@ -563,8 +623,8 @@ class Avatar(KBEngine.Proxy):
 	def _findOwnedItem(self, itemDbid, className):
 		"""本机找归属 Item 系实体(Equipment/Talisman 共用,线性扫)。"""
 		return next((e for e in KBEngine.entities.values()
-			if getattr(e, "dbid", 0) == itemDbid
-			and getattr(e, "ownerDbid", 0) == self.dbid
+			if getattr(e, "databaseID", 0) == itemDbid
+			and getattr(e, "ownerDbid", 0) == self.databaseID
 			and getattr(e, "className", "") == className), None)
 
 	def reqUseTalisman(self, talismanDbid):
@@ -594,6 +654,35 @@ class Avatar(KBEngine.Proxy):
 		if self.cell is not None and power > 0:
 			self.cell.useTalismanBlast(int(DEMO_TALISMAN_RADIUS), power)
 
+	def reqForgeTalisman(self):
+		"""
+		Exposed.(DEMO-GAME-023 炼符:建 Talisman 实体+写库,dbid 回推客户端)
+		dbid 异步回填判例(017 同款):客户端经 onTalismanGained(dbid)
+		接续 reqUseTalisman,bots 回路面即用此链。
+		"""
+		talisman = KBEngine.createEntityLocally("Talisman", {
+			"itemId": DEMO_TALISMAN_ITEM_ID,
+			"itemType": 3,
+			"count": 1,
+			"ownerDbid": self.databaseID,
+			"charges": DEMO_TALISMAN_CHARGES,
+			"power": DEMO_TALISMAN_POWER,
+		})
+		if talisman is None:
+			ERROR_MSG("Avatar[%i].reqForgeTalisman: create Talisman failed" % self.id)
+			return
+
+		def onSaved(success, _talisman):
+			if not success:
+				ERROR_MSG("Avatar[%i].reqForgeTalisman: writeToDB failed" % self.id)
+				return
+			msg = "Avatar[%i] FORGE TALISMAN dbid=%i charges=%i power=%i" % (
+				self.id, talisman.databaseID, talisman.charges, talisman.power)
+			evidenceLog(msg)
+			if self.client is not None:
+				self.client.onTalismanGained(talisman.databaseID)
+		talisman.writeToDB(onSaved)
+
 	# ---- Pet (DEMO-GAME-017) ----
 
 	def reqAdoptPet(self, name):
@@ -605,14 +694,16 @@ class Avatar(KBEngine.Proxy):
 			if not success or pet is None:
 				ERROR_MSG("Avatar[%i].reqAdoptPet: writeToDB failed name=%s" % (self.id, name))
 				return
-			self.petList.append({"dbid": pet.dbid, "name": name, "realm": pet.realm})
+			self.petList.append({"dbid": pet.databaseID, "name": name, "realm": pet.realm})
 			msg = "Avatar[%i] ADOPT PET dbid=%i name=%s roster=%i" % (
-				self.id, pet.dbid, name, len(self.petList))
+				self.id, pet.databaseID, name, len(self.petList))
 			evidenceLog(msg)
+			if self.client is not None:
+				self.client.onPetAdopted(pet.databaseID)
 		pet = KBEngine.createEntityLocally("Pet", {
 			"name": name,
 			"realm": 1,
-			"ownerDbid": self.dbid,
+			"ownerDbid": self.databaseID,
 		})
 		if pet is None:
 			ERROR_MSG("Avatar[%i].reqAdoptPet: create Pet failed" % self.id)
@@ -634,14 +725,16 @@ class Avatar(KBEngine.Proxy):
 		def summon(pet):
 			# ownerEntityId 是 CELL_PUBLIC:createCellEntity 前落 base 侧
 			# 即随 cellData 进 cell(dominantRoot 同款判例)。
-			pet.ownerEntityId = self.id
+			# CELL_PUBLIC 直赋值是 Python 平属性死通道(023 判例),
+			# ownerEntityId 走 cellData dict 才进 cell(Pet._owner 读)。
+			pet.cellData["ownerEntityId"] = self.id
 			pet.createCellEntity(space.cell)
 			msg = "Avatar[%i] SUMMON PET dbid=%i name=%s -> cell space=%i" % (
 				self.id, petDbid, pet.name, DEMO_SPACE_INDEX)
 			evidenceLog(msg)
 
 		loaded = next((e for e in KBEngine.entities.values()
-			if getattr(e, "className", "") == "Pet" and e.dbid == petDbid), None)
+			if getattr(e, "className", "") == "Pet" and e.databaseID == petDbid), None)
 		if loaded is not None:
 			summon(loaded)
 			return
@@ -664,7 +757,7 @@ class Avatar(KBEngine.Proxy):
 			DEBUG_MSG("Avatar[%i].reqRecallPet: no summoned pet" % self.id)
 			return
 		pet.destroyCellEntity()
-		msg = "Avatar[%i] RECALL PET dbid=%i name=%s" % (self.id, pet.dbid, pet.name)
+		msg = "Avatar[%i] RECALL PET dbid=%i name=%s" % (self.id, pet.databaseID, pet.name)
 		evidenceLog(msg)
 
 	def reqAcceptBounty(self, a1):
