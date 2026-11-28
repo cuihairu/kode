@@ -49,6 +49,9 @@
 | 夺舍 | 魂迁入他人身体,可避轮回;原身死亡 | seizedByDbid+reqSeizeBody(CELL 闸)+onBodySeized/onSeizeResult | 本战役 057 |
 | 强化 | 装备强化等级成长(消耗+成功率) | reqStrengthenEquip+onStrengthenResult(EQUIP_SLOT.strengthen 既有字段) | 本战役 058 |
 | 排位赛 | 排位积分/段位/匹配进 arena 对战 | rankPoints+reqJoinRankedQueue/reqLeaveRankedQueue+onRankedMatchFound(spaceKind 2) | 本战役 059 |
+| 装备库 | 纯装备寄存库(飞行器/技能/翅膀/宠物/图鉴/榜不入库) | equipDepot ARRAY<EQUIP_SLOT>+reqDepotDeposit/reqDepotWithdraw | 本战役 060 |
+| 悬赏 | 发布(托管奖励)/接单/完成拿奖励 | reqPostBounty/reqAcceptBounty/reqTurnInBounty+onBountyPosted/onBountyResult | 本战役 061 |
+| 佣兵 | 雇佣名册+召唤协战 | MERC_INFO/MERCS+mercList+hiredMercId+reqHireMerc/reqDismissMerc/reqSummonMerc | 本战役 062 |
 | 客户端 | Godot 实现,**只展示数值和对象**(轻量面板) | `templates/godot-client`(GDScript TCP) | 本战役 027-029 |
 | 无头验收 | bots 全回路(登录→建角→杀怪→修炼→穿戴→用符→召宠→布阵→入宗) | bots 脚本+demo-evidence 锚 | 本战役 023 |
 

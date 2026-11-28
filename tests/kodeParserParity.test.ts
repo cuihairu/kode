@@ -471,7 +471,8 @@ describe('kode-parser 与 TS defParser fixture 对拍(PR-005)', () => {
       'titleList', 'curTitle', 'partnerDbid', 'partnerName',
       'pendingProposerDbid', 'pendingProposerName', 'appearance',
       'costumeList', 'curCostume', 'path', 'bodyLevel', 'reincarnations',
-      'seizedByDbid', 'rankPoints',
+      'seizedByDbid', 'rankPoints', 'equipDepot',
+      'acceptedBountyId', 'mercList', 'hiredMercId',
     ]);
     expect(record.properties.find(p => p.name === 'sight')!.detailLevel).toBe('MEDIUM');
     expect(record.properties.find(p => p.name === 'hp')!.flags).toEqual(['ALL_CLIENTS']);

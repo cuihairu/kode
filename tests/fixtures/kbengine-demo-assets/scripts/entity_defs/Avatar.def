@@ -205,6 +205,40 @@
 			<Default> 0 </Default>
 			<Persistent> true </Persistent>
 		</rankPoints>
+		<!-- Equipment depot (DEMO-GAME-060): extra equipment storage
+		     beyond the bag. EQUIPMENT ONLY — flying craft, skills,
+		     wings, pets, codices and ranking boards are out of scope
+		     (2026-11-28 user order). -->
+		<equipDepot>
+			<Type>
+				ARRAY
+				<of> EQUIP_SLOT </of>
+			</Type>
+			<Flags> BASE </Flags>
+			<Persistent> true </Persistent>
+		</equipDepot>
+		<!-- Bounty board (DEMO-GAME-061): the bounty this avatar has
+		     accepted (0 = none); the board itself lives on Bounty
+		     entities (def lands with the implementation batch, same
+		     as Mall). -->
+		<acceptedBountyId>
+			<Type> UINT32 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> 0 </Default>
+		</acceptedBountyId>
+		<!-- Mercenaries (DEMO-GAME-062): hired fighters roster;
+		     hiredMercId = the one currently summoned (0 = none),
+		     summon flow mirrors pet summon. -->
+		<mercList>
+			<Type> MERCS </Type>
+			<Flags> BASE </Flags>
+			<Persistent> true </Persistent>
+		</mercList>
+		<hiredMercId>
+			<Type> UINT16 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> 0 </Default>
+		</hiredMercId>
 	</Properties>
 
 	<!-- 组件声明:引擎 loadComponents 逐条装载,组件 def 在 components/ 子目录 -->
@@ -325,6 +359,19 @@
 		<onRankedMatchFound>
 			<Arg> UINT32 </Arg>
 		</onRankedMatchFound>
+		<!-- Bounty board (DEMO-GAME-061): a new bounty was posted
+		     (bountyId, posterName, desc, reward); result pushes
+		     (1 = success) for post/accept/turn-in entries. -->
+		<onBountyPosted>
+			<Arg> UINT32 </Arg>
+			<Arg> STRING </Arg>
+			<Arg> STRING </Arg>
+			<Arg> UINT32 </Arg>
+		</onBountyPosted>
+		<onBountyResult>
+			<Arg> UINT8 </Arg>
+			<Arg> UINT32 </Arg>
+		</onBountyResult>
 	</ClientMethods>
 
 	<BaseMethods>
@@ -485,6 +532,44 @@
 		<reqLeaveRankedQueue>
 			<Exposed> true </Exposed>
 		</reqLeaveRankedQueue>
+		<!-- Equipment depot (DEMO-GAME-060): deposit/withdraw by
+		     equipment dbid; capacity check on base. -->
+		<reqDepotDeposit>
+			<Exposed> true </Exposed>
+			<Arg> UINT64 </Arg>
+		</reqDepotDeposit>
+		<reqDepotWithdraw>
+			<Exposed> true </Exposed>
+			<Arg> UINT64 </Arg>
+		</reqDepotWithdraw>
+		<!-- Bounty board (DEMO-GAME-061): post (desc + reward escrow on
+		     base), accept, turn in for the reward. -->
+		<reqPostBounty>
+			<Exposed> true </Exposed>
+			<Arg> STRING </Arg>
+			<Arg> UINT32 </Arg>
+		</reqPostBounty>
+		<reqAcceptBounty>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+		</reqAcceptBounty>
+		<reqTurnInBounty>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+		</reqTurnInBounty>
+		<!-- Mercenaries (DEMO-GAME-062): hire (cost escrow on base),
+		     dismiss, summon the hired one to fight alongside. -->
+		<reqHireMerc>
+			<Exposed> true </Exposed>
+			<Arg> UINT16 </Arg>
+		</reqHireMerc>
+		<reqDismissMerc>
+			<Exposed> true </Exposed>
+			<Arg> UINT16 </Arg>
+		</reqDismissMerc>
+		<reqSummonMerc>
+			<Exposed> true </Exposed>
+		</reqSummonMerc>
 	</BaseMethods>
 
 	<CellMethods>

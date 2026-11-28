@@ -318,4 +318,26 @@
 		</Properties>
 	</APPEARANCE>
 
+	<!-- Mercenaries (DEMO-GAME-062, 2026-11-28 user order): template
+	     roster entries; mercId indexes the DemoConsts merc table. -->
+	<MERC_INFO>
+		FIXED_DICT
+		<Properties>
+			<mercId>
+				<Type> UINT16 </Type>
+			</mercId>
+			<name>
+				<Type> STRING </Type>
+			</name>
+			<realm>
+				<Type> UINT8 </Type>
+			</realm>
+		</Properties>
+	</MERC_INFO>
+
+	<MERCS>
+		ARRAY
+		<of> MERC_INFO </of>
+	</MERCS>
+
 </root>
