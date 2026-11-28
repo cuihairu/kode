@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
+import random
+
 import KBEngine
+import cultivation
 from KBEDebug import *
 
 class Account(KBEngine.Proxy):
@@ -45,13 +48,15 @@ class Account(KBEngine.Proxy):
 		"""
 		exposed.
 		客户端请求创建角色:本地建 Avatar(Proxy,其 __init__ 内入空间建 cell),
-		随后把客户端交接到 Avatar。
+		随后把客户端交接到 Avatar。建角随机 roll 五灵根注入 props
+		(DEMO-GAME-009;引擎自动把 props 键落到同名实体属性)。
 		"""
-		INFO_MSG("Account[%i].reqCreateAvatar: %s" % (self.id, name))
-		msg = "Account[%i].reqCreateAvatar: %s" % (self.id, name)
+		props = cultivation.creation_props(name, random.Random())
+		INFO_MSG("Account[%i].reqCreateAvatar: %s spiritRoots=%s" % (self.id, name, props["spiritRoots"]))
+		msg = "Account[%i].reqCreateAvatar: %s spiritRoots=%s" % (self.id, name, props["spiritRoots"])
 		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
-		avatar = KBEngine.createEntityLocally("Avatar", {"name": name})
+		avatar = KBEngine.createEntityLocally("Avatar", props)
 		if avatar is None:
 			ERROR_MSG("Account[%i].reqCreateAvatar: create avatar failed" % self.id)
 			return

@@ -125,6 +125,16 @@ def dominant_root(roots):
     return ROOT_KEYS.index(best_key) + 1 if best_key is not None else ROOT_NONE
 
 
+def creation_props(name, rng):
+    """Avatar creation props for Account.reqCreateAvatar (DEMO-GAME-009).
+
+    The engine applies each key of the props dict to the matching entity
+    property, so "spiritRoots" here lands straight on the SPIRIT_ROOTS
+    FIXED_DICT property declared in Avatar.def.
+    """
+    return {"name": name, "spiritRoots": roll_spirit_roots(rng)}
+
+
 # ---- Item stacking ----
 
 STACK_MAX = 99

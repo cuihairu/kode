@@ -143,5 +143,49 @@ class FormationPetTests(unittest.TestCase):
         self.assertIsNone(XX.pet_follow_point((1.0, 0.0, 1.0), (1.0, 0.0, 0.5)))
 
 
+class CreationPropsTests(unittest.TestCase):
+    # DEMO-GAME-009: Account.reqCreateAvatar injects these props; the engine
+    # applies each key to the matching entity property.
+    def test_creation_props_shape(self):
+        props = XX.creation_props("hero", random.Random(7))
+        self.assertEqual(set(props), {"name", "spiritRoots"})
+        self.assertEqual(props["name"], "hero")
+        roots = props["spiritRoots"]
+        self.assertEqual(sum(roots.values()), 100)
+        self.assertEqual(set(roots), set(XX.ROOT_KEYS))
+
+
+class DemoConstsTests(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location(
+            'kode_democonsts',
+            str(ROOT / 'templates/assets/scripts/common/DemoConsts.py'))
+        self.DC = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.DC)
+
+    def test_cultivation_combat_constants(self):
+        self.assertEqual(self.DC.CULTIVATION_OVERCOME_RATIO, 1.5)
+        self.assertEqual(self.DC.CULTIVATION_GENERATED_RATIO, 0.5)
+        self.assertGreater(self.DC.CULTIVATION_SPELL_DAMAGE, 0)
+        self.assertGreater(self.DC.CULTIVATION_SPELL_COOLDOWN, 0)
+
+    def test_pet_follow_constants(self):
+        self.assertGreater(self.DC.PET_TELEPORT_DISTANCE, self.DC.PET_FOLLOW_DISTANCE)
+
+    def test_talisman_constants(self):
+        self.assertGreater(self.DC.TALISMAN_BASE_POWER, 0)
+        self.assertGreater(self.DC.TALISMAN_DURATION_SECS, 0)
+
+    def test_formation_constants(self):
+        self.assertGreaterEqual(self.DC.FORMATION_MAX_MEMBERS, 2)
+        self.assertGreater(self.DC.FORMATION_RADIUS, 0)
+        self.assertGreater(self.DC.FORMATION_BUFF_RATIO, 0)
+
+    def test_sect_constants(self):
+        self.assertGreaterEqual(self.DC.SECT_MAX_MEMBERS, 2)
+        self.assertGreater(self.DC.SECT_CREATE_COST_GOLD, 0)
+        self.assertGreater(self.DC.SECT_DONATE_EXP_RATIO, 0)
+
+
 if __name__ == '__main__':
     unittest.main()

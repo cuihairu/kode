@@ -16,3 +16,27 @@ DEMO_XP_PER_KILL = 30        # 经验(基座 experience)
 
 # bots 无头玩家移动(DEMO-GAME-004)
 DEMO_BOTS_MOVE_VELOCITY = 4.0  # bots 走向目标的速度(客户端权威位移,自动同步服务端)
+
+# Cultivation combat (DEMO-GAME-009/012): five-element affinity damage.
+CULTIVATION_OVERCOME_RATIO = 1.5   # damage multiplier when own element overcomes the target's
+CULTIVATION_GENERATED_RATIO = 0.5  # damage multiplier against the element own element generates
+CULTIVATION_SPELL_DAMAGE = 10      # base spell damage before element affinity ratios
+CULTIVATION_SPELL_COOLDOWN = 2.0   # spell cooldown in seconds
+
+# Pet follow (DEMO-GAME-009/017)
+PET_FOLLOW_DISTANCE = 5.0          # pet keeps this distance from the owner
+PET_TELEPORT_DISTANCE = 20.0       # pet teleports to the owner when farther than this
+
+# Talisman (DEMO-GAME-009/016)
+TALISMAN_BASE_POWER = 20           # base effect strength of a talisman
+TALISMAN_DURATION_SECS = 30.0      # active duration of a talisman effect in seconds
+
+# Formation (DEMO-GAME-009/018)
+FORMATION_MAX_MEMBERS = 5          # max members sharing one formation
+FORMATION_RADIUS = 10.0            # members must stay within this radius of the anchor
+FORMATION_BUFF_RATIO = 0.1         # per-member damage buff ratio while in formation
+
+# Sect (DEMO-GAME-009/019/033)
+SECT_MAX_MEMBERS = 100             # roster cap of one sect
+SECT_CREATE_COST_GOLD = 500        # gold required to found a sect
+SECT_DONATE_EXP_RATIO = 0.1        # ratio of donated experience kept as sect funds

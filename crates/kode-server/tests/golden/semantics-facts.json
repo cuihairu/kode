@@ -282,8 +282,8 @@
           "bases": [
             "KBEngine.Proxy"
           ],
-          "class_end_line": 57,
-          "class_line": 4,
+          "class_end_line": 62,
+          "class_line": 7,
           "facet": "base",
           "file": "scripts/base/Account.py"
         },

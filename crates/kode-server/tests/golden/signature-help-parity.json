@@ -1,8 +1,8 @@
 {
   "generator": "kode-server dump-signature-help-golden",
   "fileCount": 74,
-  "probeCount": 119776,
-  "hitCount": 7828,
+  "probeCount": 121690,
+  "hitCount": 7857,
   "resolvedCount": 341,
   "files": [
     {
@@ -49,11 +49,11 @@
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/base/Account.py",
-      "probeCount": 1435,
-      "hitCount": 44,
+      "probeCount": 1656,
+      "hitCount": 58,
       "entries": [
         {
-          "line": 26,
+          "line": 29,
           "call": {
             "methodName": "onLoginOK",
             "section": "ClientMethods"
@@ -2249,7 +2249,7 @@
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/common/DemoConsts.py",
-      "probeCount": 584,
+      "probeCount": 1904,
       "hitCount": 0,
       "entries": []
     },
@@ -2273,8 +2273,8 @@
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/common/cultivation.py",
-      "probeCount": 6934,
-      "hitCount": 189,
+      "probeCount": 7307,
+      "hitCount": 204,
       "entries": []
     },
     {
