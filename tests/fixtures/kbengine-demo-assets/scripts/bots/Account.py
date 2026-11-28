@@ -15,6 +15,5 @@ class Account(KBEngine.Entity):
 		"""
 		INFO_MSG("bots Account[%s].onLoginOK: reqCreateAvatar" % self.id)
 		msg = "bots Account[%s].onLoginOK: reqCreateAvatar" % self.id
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
-		self.base.reqCreateAvatar("bot%s" % self.id)
+		self.base.reqCreateAvatar("bot%s" % self.id, 1)  # race=1 human (DEMO-GAME-069)

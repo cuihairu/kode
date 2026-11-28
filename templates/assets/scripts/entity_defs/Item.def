@@ -5,20 +5,27 @@
 	<Properties>
 		<itemId>
 			<Type> ITEM_ID </Type>
+			<Flags> BASE </Flags>
+			<Persistent> true </Persistent>
 		</itemId>
 		<itemType>
 			<Type> UINT8 </Type>
+			<Flags> BASE </Flags>
 			<Default> 1 </Default>
+			<Persistent> true </Persistent>
 		</itemType>
 		<count>
 			<Type> UINT16 </Type>
+			<Flags> BASE </Flags>
 			<Default> 1 </Default>
+			<Persistent> true </Persistent>
 		</count>
 		<!-- Owner avatar dbid; indexed for owner-side lookup. -->
 		<ownerDbid>
 			<Type> UINT64 </Type>
+			<Flags> BASE </Flags>
 			<Persistent> true </Persistent>
-			<Index> true </Index>
+			<Index> INDEX </Index>
 		</ownerDbid>
 	</Properties>
 </root>

@@ -24,7 +24,6 @@ class Avatar(KBEngine.Proxy):
 		self._pendingFormations = []
 		INFO_MSG("Avatar[%i] created, name=%s" % (self.id, self.name))
 		msg = "Avatar[%i] created, name=%s -> enterSpace(%i)" % (self.id, self.name, DEMO_SPACE_INDEX)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		self.enterSpace(DEMO_SPACE_INDEX)
 
@@ -43,7 +42,6 @@ class Avatar(KBEngine.Proxy):
 			msg = "Avatar[%i] REALM UP %s->%s exp=%i (writeToDB)" % (
 				self.id, cultivation.REALM_NAMES[before], cultivation.REALM_NAMES[new_realm], self.experience,
 			)
-			print("[demo-evidence] %s" % msg, flush=True)
 			evidenceLog(msg)
 			if self.client is not None:
 				self.client.onRealmUp(new_realm)
@@ -69,7 +67,6 @@ class Avatar(KBEngine.Proxy):
 			self.id, self.dominantRoot,
 			cultivation.ROOT_KEYS[self.dominantRoot - 1] if self.dominantRoot else "none",
 		)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		self.createCellEntity(space.cell)
 
@@ -82,7 +79,6 @@ class Avatar(KBEngine.Proxy):
 		if self.cell is not None:
 			self.destroyCellEntity()
 		msg = "Avatar[%i] base respawn scheduled in %.1fs" % (self.id, DEMO_RESPAWN_DELAY)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		self.addTimer(DEMO_RESPAWN_DELAY, 0, TIMER_RESPAWN)
 
@@ -96,7 +92,6 @@ class Avatar(KBEngine.Proxy):
 		if userArg != TIMER_RESPAWN:
 			return
 		msg = "Avatar[%i] RESPAWN -> enterSpace(%i) (fresh cell, full hp)" % (self.id, DEMO_SPACE_INDEX)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		self.enterSpace(DEMO_SPACE_INDEX)
 
@@ -113,10 +108,9 @@ class Avatar(KBEngine.Proxy):
 				continue
 			f.createCellEntity(space.cell)
 			msg = "Avatar[%i] PLACE FORMATION kind=%s id=%i owner=%i at (%.1f,%.1f)" % (
-				self.id, f.kind, f.id, self.dbid,
+				self.id, f.kind, f.id, self.databaseID,
 				f.cellData["position"][0], f.cellData["position"][2],
 			)
-			print("[demo-evidence] %s" % msg, flush=True)
 			evidenceLog(msg)
 			if self.client is not None:
 				self.client.onFormationPlaced(f.kind, f.id)
@@ -131,7 +125,7 @@ class Avatar(KBEngine.Proxy):
 			kind = "gather"
 		f = KBEngine.createEntityLocally("Formation", {
 			"kind": kind,
-			"ownerId": self.dbid,
+			"ownerId": self.databaseID,
 			"ownerEntityId": self.id,
 		})
 		if f is None:
@@ -144,11 +138,11 @@ class Avatar(KBEngine.Proxy):
 
 	def _findSect(self, sectDbid):
 		return next((e for e in KBEngine.entities.values()
-			if getattr(e, "className", "") == "Sect" and e.dbid == sectDbid), None)
+			if getattr(e, "className", "") == "Sect" and e.databaseID == sectDbid), None)
 
 	def _memberInfo(self):
 		return {
-			"dbid": self.dbid,
+			"dbid": self.databaseID,
 			"name": self.name,
 			"realm": self.realm,
 			"rank": 0,
@@ -182,16 +176,15 @@ class Avatar(KBEngine.Proxy):
 				ERROR_MSG("Avatar[%i].reqCreateSect: writeToDB failed name=%s" % (self.id, name))
 				return
 			sect.members = [self._memberInfo()]
-			self.sectId = sect.dbid
+			self.sectId = sect.databaseID
 			self.sectName = sect.name
 			msg = "Avatar[%i] SECT FOUNDED dbid=%i name=%s leader=%i" % (
-				self.id, sect.dbid, sect.name, self.dbid)
-			print("[demo-evidence] %s" % msg, flush=True)
+				self.id, sect.databaseID, sect.name, self.databaseID)
 			evidenceLog(msg)
 			sect.writeToDB()
 		sect = KBEngine.createEntityLocally("Sect", {
 			"name": name,
-			"leaderDbid": self.dbid,
+			"leaderDbid": self.databaseID,
 			"members": [],
 		})
 		if sect is None:
@@ -215,16 +208,15 @@ class Avatar(KBEngine.Proxy):
 			if sect is None:
 				ERROR_MSG("Avatar[%i].reqJoinSect: sect %i not found" % (self.id, sectDbid))
 				return
-			if sect.full() or sect.hasMember(self.dbid):
+			if sect.full() or sect.hasMember(self.databaseID):
 				DEBUG_MSG("Avatar[%i].reqJoinSect: sect full or already member" % self.id)
 				return
 			sect.addMember(self._memberInfo())
-			self.sectId = sect.dbid
+			self.sectId = sect.databaseID
 			self.sectName = sect.name
 			sect.writeToDB()
 			msg = "Avatar[%i] SECT JOIN dbid=%i name=%s members=%i" % (
-				self.id, sect.dbid, sect.name, len(sect.members))
-			print("[demo-evidence] %s" % msg, flush=True)
+				self.id, sect.databaseID, sect.name, len(sect.members))
 			evidenceLog(msg)
 
 		sect = self._findSect(sectDbid)
@@ -248,7 +240,7 @@ class Avatar(KBEngine.Proxy):
 		if sect is None:
 			ERROR_MSG("Avatar[%i].reqLeaveSect: sect %i not loaded" % (self.id, sectDbid))
 			return
-		sect.removeMember(self.dbid)
+		sect.removeMember(self.databaseID)
 		self.sectId = 0
 		self.sectName = ""
 		if not len(sect.members):
@@ -257,24 +249,20 @@ class Avatar(KBEngine.Proxy):
 			if KBEngine.globalData.get(sectKey) is not None:
 				del KBEngine.globalData[sectKey]
 				msg = "Avatar[%i] SECT GLOBALDATA RELEASE %s" % (self.id, sectKey)
-				print("[demo-evidence] %s" % msg, flush=True)
 				evidenceLog(msg)
 			sect.deleteFromDB()
 			sect.destroy()
 			msg = "Avatar[%i] SECT DISBAND dbid=%i name=%s (empty)" % (
 				self.id, sectDbid, sectName)
-			print("[demo-evidence] %s" % msg, flush=True)
 			evidenceLog(msg)
 			return
-		if sect.leaderDbid == self.dbid:
+		if sect.leaderDbid == self.databaseID:
 			sect.leaderDbid = sect.members[0]["dbid"]
 			msg = "Sect[%i] LEADER TRANSFER -> %i" % (sectDbid, sect.leaderDbid)
-			print("[demo-evidence] %s" % msg, flush=True)
 			evidenceLog(msg)
 		sect.writeToDB()
 		msg = "Avatar[%i] SECT LEAVE dbid=%i members=%i" % (
 			self.id, sectDbid, len(sect.members))
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
 	def reqSectChat(self, text):
@@ -300,7 +288,6 @@ class Avatar(KBEngine.Proxy):
 		if newLevel != self.level:
 			self.level = newLevel
 			msg = "Avatar[%i] LEVEL UP -> %i (experience=%i)" % (self.id, newLevel, self.experience)
-			print("[demo-evidence] %s" % msg, flush=True)
 			evidenceLog(msg)
 			if self.client is not None:
 				self.client.onLevelUp(newLevel)
@@ -328,7 +315,6 @@ class Avatar(KBEngine.Proxy):
 		"""
 		INFO_MSG("Avatar[%i].onClientEnabled: client=%s" % (self.id, self.client))
 		msg = "Avatar[%i].onClientEnabled: client handed over (giveClientTo done)" % self.id
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
 	def onRadarPush(self, x, z, attackerId):
@@ -340,7 +326,6 @@ class Avatar(KBEngine.Proxy):
 		msg = "Avatar[%i].onRadarPush attacker=%i client=%s" % (
 			self.id, attackerId, "set" if self.client is not None else "NONE",
 		)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		if self.client is not None:
 			self.client.onMonsterNear(x, z, attackerId)
@@ -384,17 +369,16 @@ class Avatar(KBEngine.Proxy):
 					list(self.bag.items), itemId, removed, DEMO_BAG_CAPACITY)
 				self.bag.items = refunded
 				return
-			self.equipDepot.append({"dbid": item.dbid, "strengthen": 0})
+			self.equipDepot.append({"dbid": item.databaseID, "strengthen": 0})
 			msg = "Avatar[%i] DEPOSIT itemId=%i count=%i -> Item dbid=%i depot=%i" % (
-				self.id, itemId, removed, item.dbid, len(self.equipDepot))
-			print("[demo-evidence] %s" % msg, flush=True)
+				self.id, itemId, removed, item.databaseID, len(self.equipDepot))
 			evidenceLog(msg)
 
 		item = KBEngine.createEntityLocally("Item", {
 			"itemId": itemId,
 			"itemType": 1,
 			"count": removed,
-			"ownerDbid": self.dbid,
+			"ownerDbid": self.databaseID,
 		})
 		if item is None:
 			ERROR_MSG("Avatar[%i].reqDepotDeposit: create Item failed" % self.id)
@@ -414,7 +398,7 @@ class Avatar(KBEngine.Proxy):
 			return
 		item = next((e for e in KBEngine.entities.values()
 			if getattr(e, "dbid", 0) == itemDbid
-			and getattr(e, "ownerDbid", 0) == self.dbid), None)
+			and getattr(e, "ownerDbid", 0) == self.databaseID), None)
 		if item is None:
 			DEBUG_MSG("Avatar[%i].reqDepotWithdraw: Item entity dbid=%i not local" % (self.id, itemDbid))
 			return
@@ -429,14 +413,13 @@ class Avatar(KBEngine.Proxy):
 		item.destroy()
 		msg = "Avatar[%i] WITHDRAW Item dbid=%i itemId=%i count=%i -> bag (depot=%i)" % (
 			self.id, itemDbid, item.itemId, item.count, len(self.equipDepot))
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
 	def _findOwnedEquip(self, equipDbid):
 		"""本机找归属装备实体(demo 规模线性扫,同 reqDepotWithdraw)。"""
 		return next((e for e in KBEngine.entities.values()
 			if getattr(e, "dbid", 0) == equipDbid
-			and getattr(e, "ownerDbid", 0) == self.dbid
+			and getattr(e, "ownerDbid", 0) == self.databaseID
 			and getattr(e, "className", "") == "Equipment"), None)
 
 	def _recomputeAttrs(self, why):
@@ -458,7 +441,6 @@ class Avatar(KBEngine.Proxy):
 			before.get("maxHp", 0), total["maxHp"], before.get("attack", 0), total["attack"],
 			before.get("defense", 0), total["defense"], before.get("qi", 0), total["qi"],
 		)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
 	def reqForgeEquip(self, itemId, slot):
@@ -475,16 +457,15 @@ class Avatar(KBEngine.Proxy):
 			if not success or equip is None:
 				ERROR_MSG("Avatar[%i].reqForgeEquip: writeToDB failed itemId=%i" % (self.id, itemId))
 				return
-			self.equipDepot.append({"dbid": equip.dbid, "strengthen": 0})
+			self.equipDepot.append({"dbid": equip.databaseID, "strengthen": 0})
 			msg = "Avatar[%i] FORGE Equipment dbid=%i itemId=%i slot=%s -> depot=%i" % (
-				self.id, equip.dbid, itemId, slot, len(self.equipDepot))
-			print("[demo-evidence] %s" % msg, flush=True)
+				self.id, equip.databaseID, itemId, slot, len(self.equipDepot))
 			evidenceLog(msg)
 		equip = KBEngine.createEntityLocally("Equipment", {
 			"itemId": itemId,
 			"itemType": 2,
 			"count": 1,
-			"ownerDbid": self.dbid,
+			"ownerDbid": self.databaseID,
 			"slot": slot,
 			"realmReq": entry["realmReq"],
 			"bonus": dict(entry["bonus"]),
@@ -583,7 +564,7 @@ class Avatar(KBEngine.Proxy):
 		"""本机找归属 Item 系实体(Equipment/Talisman 共用,线性扫)。"""
 		return next((e for e in KBEngine.entities.values()
 			if getattr(e, "dbid", 0) == itemDbid
-			and getattr(e, "ownerDbid", 0) == self.dbid
+			and getattr(e, "ownerDbid", 0) == self.databaseID
 			and getattr(e, "className", "") == className), None)
 
 	def reqUseTalisman(self, talismanDbid):
@@ -602,7 +583,6 @@ class Avatar(KBEngine.Proxy):
 			talisman.deleteFromDB()
 			talisman.destroy()
 			msg = "Avatar[%i] TALISMAN dbid=%i DEPLETED -> destroyed" % (self.id, talismanDbid)
-			print("[demo-evidence] %s" % msg, flush=True)
 			evidenceLog(msg)
 			power = 0
 		else:
@@ -610,7 +590,6 @@ class Avatar(KBEngine.Proxy):
 			power = talisman.power
 			msg = "Avatar[%i] TALISMAN dbid=%i use -> charges=%i power=%i" % (
 				self.id, talismanDbid, remaining, power)
-			print("[demo-evidence] %s" % msg, flush=True)
 			evidenceLog(msg)
 		if self.cell is not None and power > 0:
 			self.cell.useTalismanBlast(int(DEMO_TALISMAN_RADIUS), power)
@@ -626,15 +605,14 @@ class Avatar(KBEngine.Proxy):
 			if not success or pet is None:
 				ERROR_MSG("Avatar[%i].reqAdoptPet: writeToDB failed name=%s" % (self.id, name))
 				return
-			self.petList.append({"dbid": pet.dbid, "name": name, "realm": pet.realm})
+			self.petList.append({"dbid": pet.databaseID, "name": name, "realm": pet.realm})
 			msg = "Avatar[%i] ADOPT PET dbid=%i name=%s roster=%i" % (
-				self.id, pet.dbid, name, len(self.petList))
-			print("[demo-evidence] %s" % msg, flush=True)
+				self.id, pet.databaseID, name, len(self.petList))
 			evidenceLog(msg)
 		pet = KBEngine.createEntityLocally("Pet", {
 			"name": name,
 			"realm": 1,
-			"ownerDbid": self.dbid,
+			"ownerDbid": self.databaseID,
 		})
 		if pet is None:
 			ERROR_MSG("Avatar[%i].reqAdoptPet: create Pet failed" % self.id)
@@ -660,11 +638,10 @@ class Avatar(KBEngine.Proxy):
 			pet.createCellEntity(space.cell)
 			msg = "Avatar[%i] SUMMON PET dbid=%i name=%s -> cell space=%i" % (
 				self.id, petDbid, pet.name, DEMO_SPACE_INDEX)
-			print("[demo-evidence] %s" % msg, flush=True)
 			evidenceLog(msg)
 
 		loaded = next((e for e in KBEngine.entities.values()
-			if getattr(e, "className", "") == "Pet" and e.dbid == petDbid), None)
+			if getattr(e, "className", "") == "Pet" and e.databaseID == petDbid), None)
 		if loaded is not None:
 			summon(loaded)
 			return
@@ -687,6 +664,227 @@ class Avatar(KBEngine.Proxy):
 			DEBUG_MSG("Avatar[%i].reqRecallPet: no summoned pet" % self.id)
 			return
 		pet.destroyCellEntity()
-		msg = "Avatar[%i] RECALL PET dbid=%i name=%s" % (self.id, pet.dbid, pet.name)
-		print("[demo-evidence] %s" % msg, flush=True)
+		msg = "Avatar[%i] RECALL PET dbid=%i name=%s" % (self.id, pet.databaseID, pet.name)
 		evidenceLog(msg)
+
+	def reqAcceptBounty(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqAddFriend(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqBuyGoods(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqBuyMonthlyCard(self):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqChatMessage(self, a1, a2):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqChoosePath(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqClaimFirstRecharge(self):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqClaimVipReward(self):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqCreateParty(self):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqDaoPartnerReply(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqDelFriend(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqDismissMerc(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqHireMerc(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqJoinRankedQueue(self):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqLeaveRankedQueue(self):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqPartyInvite(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqPartyLeave(self):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqPartyReply(self, a1, a2):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqPartyStart(self):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqPartyStartReply(self, a1, a2):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqPostBounty(self, a1, a2):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqReincarnate(self):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqRideOff(self):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqRideOn(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqSetAppearance(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqSetLootMode(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqStrengthenEquip(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqSummonMerc(self):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqTemperBody(self):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqTradeCancel(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqTradeConfirm(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqTradeLock(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqTradeReply(self, a1, a2):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqTradeSetOffer(self, a1, a2):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqTurnInBounty(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqWearCostume(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqWearTitle(self, a1):
+		"""Avatar base Base face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass

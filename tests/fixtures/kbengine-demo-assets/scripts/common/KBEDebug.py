@@ -2,7 +2,27 @@
 import sys
 import KBEngine
 
+def _ensure_stdout_safe():
+	# Engine binding defect (fork 0.1.2 embeds Python 3.12.13 via vcpkg;
+	# upstream default is 3.7.3): ScriptStdOut/ScriptStdErr parse their
+	# argument with a '#' format without PY_SSIZE_T_CLEAN, so every print()
+	# raises SystemError back into the script and aborts it (this killed
+	# onBaseAppReady before entity creation on a fresh database). The
+	# engine also (re)installs ScriptStdOut later (observed right after a
+	# telnet console attaches), so this guard runs per call, not just at
+	# import time. Harmless on engines whose stdout bindings work.
+	if type(sys.stdout).__name__ == "ScriptStdOut" or \
+			type(sys.stderr).__name__ == "ScriptStdErr":
+		import io
+		sys.stdout = io.TextIOWrapper(
+			io.FileIO(1, "w", closefd=False),
+			line_buffering=True, encoding="utf-8", errors="replace")
+		sys.stderr = io.TextIOWrapper(
+			io.FileIO(2, "w", closefd=False),
+			line_buffering=True, encoding="utf-8", errors="replace")
+
 def printMsg(args, isPrintPath):
+	_ensure_stdout_safe()
 	for m in args:print (m)
 
 def TRACE_MSG(*args): 

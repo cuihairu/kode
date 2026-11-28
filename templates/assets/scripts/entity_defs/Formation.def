@@ -13,7 +13,7 @@
 			<Type> UINT64 </Type>
 			<Flags> BASE </Flags>
 			<Persistent> true </Persistent>
-			<Index> true </Index>
+			<Index> INDEX </Index>
 		</ownerId>
 		<ownerEntityId>
 			<Type> UINT32 </Type>

@@ -11,12 +11,11 @@ class Item(KBEngine.Entity):
 	def __init__(self):
 		KBEngine.Entity.__init__(self)
 
-	def onWriteToDB(self):
+	def onWriteToDB(self, *args):
 		"""
 		KBEngine method.写库成功登记,打锚供真机 grep(dbid 此时已分配)。
 		"""
 		msg = "Item[%i] SAVED dbid=%i itemId=%i count=%i owner=%i" % (
-			self.id, self.dbid, self.itemId, self.count, self.ownerDbid,
+			self.id, self.databaseID, self.itemId, self.count, self.ownerDbid,
 		)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)

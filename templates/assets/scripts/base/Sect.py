@@ -28,18 +28,17 @@ class Sect(KBEngine.Entity):
 		for e in KBEngine.entities.values():
 			if getattr(e, "className", "") != "Avatar":
 				continue
-			if e.dbid != getattr(self, "leaderDbid", 0) and not self.hasMember(e.dbid):
+			if e.databaseID != getattr(self, "leaderDbid", 0) and not self.hasMember(e.databaseID):
 				continue
-			if getattr(e, "sectId", 0) != self.dbid:
+			if getattr(e, "sectId", 0) != self.databaseID:
 				continue
 			client = getattr(e, "client", None)
 			if client is None:
 				continue
 			client.onSectChat(senderName, text)
 		msg = "Sect[%i] CHAT from=%s len=%i members=%i" % (
-			self.dbid, senderName, len(text), len(self.members),
+			self.databaseID, senderName, len(text), len(self.members),
 		)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
 	def onWriteToDB(self, *args):
@@ -48,7 +47,6 @@ class Sect(KBEngine.Entity):
 		子表 tbl_Sect_members 随 members ARRAY Persistent 落)。
 		"""
 		msg = "Sect[%i] SAVED dbid=%i name=%s leader=%i members=%i" % (
-			self.id, self.dbid, self.name, self.leaderDbid, len(self.members),
+			self.id, self.databaseID, self.name, self.leaderDbid, len(self.members),
 		)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)

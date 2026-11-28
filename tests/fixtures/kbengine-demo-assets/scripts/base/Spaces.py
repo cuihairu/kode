@@ -15,7 +15,6 @@ class Spaces(KBEngine.Entity):
 		KBEngine.Entity.__init__(self)
 		INFO_MSG("Spaces[%i] created, building demo spaces..." % self.id)
 		msg = "Spaces[%i] created (baseapp)" % self.id
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		# 迷你 ARPG:单一世界空间(索引 1);多空间扩展时往这里加号即可。
 		# DEMO-GAME-020 副本扩展位:宗门地图按 spaceIndex=1000+sectDbid

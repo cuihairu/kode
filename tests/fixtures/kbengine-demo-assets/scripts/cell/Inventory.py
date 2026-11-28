@@ -33,7 +33,6 @@ class Inventory(KBEngine.EntityComponent):
 		msg = "Inventory addItem itemId=%i asked=%i added=%i slots=%i" % (
 			itemId, count, added, len(self.items),
 		)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		self.onItemGained({"itemId": itemId, "count": added})
 		return added

@@ -46,7 +46,6 @@ class Space(KBEngine.Entity):
 			spawned.append(m.id if m is not None else 0)
 		INFO_MSG("Space cell[%i] spawn done: %s" % (self.id, spawned))
 		msg = "Space cell[%i] spawn done: %s (spaceID=%i)" % (self.id, spawned, self.spaceID)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
 	def onEnterSpace(self):

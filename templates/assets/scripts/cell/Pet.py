@@ -61,5 +61,4 @@ class Pet(KBEngine.Entity):
 			msg = "Pet[%i] ASSIST hit Monster[%i] dmg=%i for owner=%i" % (
 				self.id, best.id, DEMO_PET_DAMAGE, self.ownerEntityId,
 			)
-			print("[demo-evidence] %s" % msg, flush=True)
 			evidenceLog(msg)

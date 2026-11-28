@@ -26,7 +26,6 @@ class Equipment(Item):
 			self.id, gemInfo.get("gemId", 0), gemInfo.get("level", 0),
 			gemInfo.get("attrType", 0), gemInfo.get("attrValue", 0), len(self.gems),
 		)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
 	def onUnsocketGem(self, gemIndex):
@@ -42,5 +41,4 @@ class Equipment(Item):
 		msg = "Equipment[%i] UNSOCKET index=%i attrType=%i attrValue=%i slots=%i" % (
 			self.id, gemIndex, gem.get("attrType", 0), gem.get("attrValue", 0), len(self.gems),
 		)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)

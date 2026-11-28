@@ -18,7 +18,6 @@ class Space(KBEngine.Entity):
 		"""
 		INFO_MSG("Space[%i].onGetCell: space established (index=%s)" % (self.id, getattr(self, "spaceIndex", 0)))
 		msg = "Space[%i].onGetCell: space established (index=%s)" % (self.id, getattr(self, "spaceIndex", 0))
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
 	def onLoseCell(self):

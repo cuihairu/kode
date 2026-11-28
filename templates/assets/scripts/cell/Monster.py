@@ -41,7 +41,6 @@ class Monster(Avatar):
 		受击反击:把攻击者立为仇恨目标(不受 AGGRO_RANGE 限制,下一 tick 追击)
 		"""
 		msg = "Monster[%i].onDamaged attacker=Avatar[%i] -> counter-aggro" % (self.id, attackerId)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		self.aiTargetId = attackerId
 
@@ -86,7 +85,6 @@ class Monster(Avatar):
 				msg = "Monster[%i] KILLED by Avatar[%i] reward gold+=%i exp+=%i" % (
 					self.id, attackerId, DEMO_GOLD_PER_KILL, DEMO_XP_PER_KILL,
 				)
-				print("[demo-evidence] %s" % msg, flush=True)
 				evidenceLog(msg)
 				# 掉落入袋(DEMO-GAME-013):堆叠合并走 bag.addItem 纯函数核。
 				killer.bag.addItem(DEMO_DROP_ITEM_ID, DEMO_DROP_ITEM_COUNT)
@@ -146,7 +144,6 @@ class Monster(Avatar):
 			monster_ai.AI_STATE_NAMES.get(newState, str(newState)),
 			self.position.x, self.position.y, self.position.z,
 		)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		self.aiState = newState
 
@@ -165,7 +162,6 @@ class Monster(Avatar):
 		scale = self._bindScale()
 		if scale != self.aiSpeedScale:
 			msg = "Monster[%i] BIND speed x%.1f (formation ring)" % (self.id, scale)
-			print("[demo-evidence] %s" % msg, flush=True)
 			evidenceLog(msg)
 			self.aiSpeedScale = scale
 		target = self._pickTarget()
@@ -214,7 +210,6 @@ class Monster(Avatar):
 					getattr(self, "dominantRoot", cultivation.ROOT_NONE),
 					getattr(target, "dominantRoot", cultivation.ROOT_NONE), mult, target.hp,
 				)
-				print("[demo-evidence] %s" % msg, flush=True)
 				evidenceLog(msg)
 		elif action == "return":
 			if not self.aiMoving:

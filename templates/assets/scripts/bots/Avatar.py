@@ -29,14 +29,12 @@ class Avatar(KBEngine.Entity):
 		self.aiMoving = False
 		INFO_MSG("bots Avatar[%s] client entity created, pos=%s" % (self.id, getattr(self, "position", None)))
 		msg = "bots Avatar[%s] client entity created (entity sync), pos=%s" % (self.id, getattr(self, "position", None))
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
 	def _fightAt(self, monsterId, x, z):
 		"""雷达目标:近身即回击(exposed cell 方法),远处 reqGoto 服务端走位。"""
 		if monsterId != self.lastTargetId:
 			msg = "bots Avatar[%s] target Monster[%s] radar=(%.1f,%.1f)" % (self.id, monsterId, x, z)
-			print("[demo-evidence] %s" % msg, flush=True)
 			evidenceLog(msg)
 			self.lastTargetId = monsterId
 			# 换目标即重走位:登录同步窗口内发出的 cell 面调用会被引擎丢弃
@@ -53,7 +51,6 @@ class Avatar(KBEngine.Entity):
 			msg = "bots Avatar[%s] move toward Monster[%s] from (%.1f,%.1f) dist=%.1f" % (
 				self.id, monsterId, self.position.x, self.position.z, dist,
 			)
-			print("[demo-evidence] %s" % msg, flush=True)
 			evidenceLog(msg)
 			# 引擎取证:client_lib moveToPoint 靠 0.1s ScriptCallbacks 计时器驱动,
 			# 该计时器在 bots 进程不泵(真机:调用后无 onMoveOver/onMoveFailure 回调);
@@ -73,7 +70,6 @@ class Avatar(KBEngine.Entity):
 		KBEngine method.(客户端实体进场:玩法回路起点)
 		"""
 		msg = "bots Avatar[%s] onEnterWorld pos=(%.1f,%.1f)" % (self.id, self.position.x, self.position.z)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
 	def onMoveOver(self, controllerId, userarg):
@@ -83,7 +79,6 @@ class Avatar(KBEngine.Entity):
 		"""
 		self.aiMoving = False
 		msg = "bots Avatar[%s] arrived (%.1f,%.1f)" % (self.id, self.position.x, self.position.z)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		if self.lastTargetId and self.cell is not None:
 			self.cell.reqAttack(self.lastTargetId)
@@ -96,7 +91,6 @@ class Avatar(KBEngine.Entity):
 		msg = "bots Avatar[%s] move FAILED (pos=%.1f,%.1f)" % (
 			self.id, self.position.x, self.position.z,
 		)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
 	def onLevelUp(self, newLevel):
@@ -104,7 +98,6 @@ class Avatar(KBEngine.Entity):
 		Client method.(Avatar.def ClientMethods)
 		"""
 		msg = "bots Avatar[%s] onLevelUp level=%s" % (self.id, newLevel)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
 	def onRealmUp(self, realm):
@@ -112,7 +105,6 @@ class Avatar(KBEngine.Entity):
 		Client method.(Avatar.def ClientMethods,修仙战役 DEMO-GAME-011)
 		"""
 		msg = "bots Avatar[%s] onRealmUp realm=%s" % (self.id, realm)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
 	def onHPChanged(self, hp):
@@ -123,3 +115,129 @@ class Avatar(KBEngine.Entity):
 		if hp > 0 and not self.aiMoving and self.cell is not None:
 			# 受击即向最后雷达目标回击一次(近战贴脸状态)
 			self.cell.reqAttack(self.lastTargetId)
+
+	def onBodySeized(self, a1, a2):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onBountyPosted(self, a1, a2, a3, a4):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onBountyResult(self, a1, a2):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onBuyResult(self, a1, a2):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onChatMessage(self, a1):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onCostumeGained(self, a1):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onDaoPartnerReply(self, a1):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onDaoProposal(self, a1, a2):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onDungeonReady(self, a1):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onFormationPlaced(self, a1, a2):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onPartyInvite(self, a1, a2, a3):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onPartyRoster(self, a1):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onPartyStartVote(self, a1):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onRankedMatchFound(self, a1):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onReincarnateStart(self, a1):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onSectChat(self, a1, a2):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onSeizeResult(self, a1):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onStrengthenResult(self, a1, a2):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onTitleGained(self, a1):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onTradeEvent(self, a1, a2):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def onTradeInvite(self, a1, a2, a3):
+		"""Avatar bots-client Client face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass

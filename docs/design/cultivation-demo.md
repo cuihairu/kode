@@ -61,6 +61,7 @@
 | 成就系统图 | 里程碑解锁+图鉴面,联动称号 | achList ARRAY<UINT16>+onAchievementUnlocked | 本战役 066 |
 | 运营活动组 | 首充/月卡/VIP;任务型活动走 Task 面 | firstRechargeDone/monthlyCardUntil/vipLevel+三领取入口 | 本战役 067 |
 | 服务器活动域 | 一个服的活动跟着这个服走:开服时间/世界等级/个人注册时间/物理时间/周期时间;有 server 对象承载 | Server 基座实体(开机单例)+五维活动时钟+activity_visible 纯函数核+globalData 广播位 | 本战役 070 |
+| 日切/周切 | 周期重置:每日/每周界点重算,重置领取位与周常 | day_index/week_index 纯函数+Server 定时判界广播 onDayReset/onWeekReset | 本战役 071 |
 | 客户端 | Godot 实现,**只展示数值和对象**(轻量面板) | `templates/godot-client`(GDScript TCP) | 本战役 027-029 |
 | 无头验收 | bots 全回路(登录→建角→杀怪→修炼→穿戴→用符→召宠→布阵→入宗) | bots 脚本+demo-evidence 锚 | 本战役 023 |
 

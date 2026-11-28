@@ -19,6 +19,7 @@
 #   KBE_DEMO_NIC    引擎 internalInterface(默认本机 192.168.5.x 首地址)
 #   KBE_DEMO_DB_RESET  start 前重建干净库(默认 1;=0 跳过,诊断脏库残留用)
 #   KBE_DEMO_MYSQL_BIN mysql 客户端(默认 mysql)
+#   KBE_DEMO_DB_USER  数据库账号(默认 root;本地库用 kbe 时设 kbe)
 #
 # 验收锚(起服后 grep 运行目录 logs/):
 #   "Spaces[?] created"                Spaces 空间管理器建立
@@ -34,7 +35,7 @@ KBE_ROOT=${KBE_ROOT:-"$HOME/workspaces/kbengine"}
 RUN_DIR=${KBE_DEMO_RUN:-"$HOME/.cache/kode-demo-engine-run"}
 DB_HOST_PORT=${KBE_DEMO_DB:-192.168.5.5:3306}
 DB_NAME=kode_demo
-DB_USER=root
+DB_USER=${KBE_DEMO_DB_USER:-root}
 DB_PASS=${KBE_DEMO_DB_PASS:-kbengine_root_pw_2026}
 
 DB_HOST=${DB_HOST_PORT%%:*}

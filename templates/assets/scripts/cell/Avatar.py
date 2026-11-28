@@ -52,7 +52,6 @@ class Avatar(KBEngine.Entity):
 			getattr(self, "dominantRoot", cultivation.ROOT_NONE),
 			getattr(target, "dominantRoot", cultivation.ROOT_NONE), mult,
 		)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		target.receiveDamage(damage, self.id)
 
@@ -86,7 +85,6 @@ class Avatar(KBEngine.Entity):
 		"""
 		INFO_MSG("Avatar[%i].onEnterSpace: spaceID=%s, position=%s" % (self.id, self.spaceID, self.position))
 		msg = "Avatar[%i].onEnterSpace: ENTERED WORLD spaceID=%s pos=%s" % (self.id, self.spaceID, self.position)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		# 入场首推雷达:登录序为 onClientEnabled(基座先接客户端)→ 本钩子,
 		# 此时 cell 与基座客户端俱备;bots 无索敌面,无头玩家进世界即有目标走位。
@@ -119,7 +117,6 @@ class Avatar(KBEngine.Entity):
 				msg = "Avatar[%i] radar ping: NO live monster (entities=%i monsters=%i)" % (
 					self.id, scanTotal, scanMonsters,
 				)
-				print("[demo-evidence] %s" % msg, flush=True)
 				evidenceLog(msg)
 				return
 			if True:
@@ -127,14 +124,12 @@ class Avatar(KBEngine.Entity):
 				msg = "Avatar[%i] radar ping nearest Monster[%i] dist=%.1f" % (
 					self.id, best.id, bestDist if bestDist is not None else -1,
 				)
-				print("[demo-evidence] %s" % msg, flush=True)
 				evidenceLog(msg)
 				base = getattr(self, "base", None)
 				if base is not None:
 					base.onRadarPush(best.position.x, best.position.z, best.id)
 		except Exception as ex:
 			msg = "Avatar[%i] reqRadarPing EXC %r" % (self.id, ex)
-			print("[demo-evidence] %s" % msg, flush=True)
 			evidenceLog(msg)
 
 	def useTalismanBlast(self, radius, power):
@@ -154,7 +149,6 @@ class Avatar(KBEngine.Entity):
 		msg = "Avatar[%i] TALISMAN BLAST radius=%.1f power=%i hits=%i" % (
 			self.id, radius, power, hits,
 		)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
 	def receiveDamage(self, damage, attackerId):
@@ -169,14 +163,12 @@ class Avatar(KBEngine.Entity):
 		msg = "Avatar[%i].receiveDamage dmg=%i attacker=%i hp=%i" % (
 			self.id, damage, attackerId, self.hp,
 		)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		if self.hp == 0:
 			msg = "%s[%i] DIED (killer=%i)%s" % (
 				getattr(self, "className", "Avatar"), self.id, attackerId,
 				" -> respawn pending" if hasattr(self, "base") and self.base is not None else "",
 			)
-			print("[demo-evidence] %s" % msg, flush=True)
 			evidenceLog(msg)
 			# 死亡结算:基座销 cell(destroyCellEntity 是基座面 API)+排重生计时。
 			# Monster(纯 cell 实体)继承本实现,无 base——它的死亡奖励/自毁在其
@@ -199,7 +191,6 @@ class Avatar(KBEngine.Entity):
 					msg = "Avatar[%i] radar push attacker=%s[%i] via base" % (
 						self.id, getattr(attacker, "className", "?"), attackerId,
 					)
-					print("[demo-evidence] %s" % msg, flush=True)
 					evidenceLog(msg)
 					base.onRadarPush(
 						attacker.position.x, attacker.position.z, attackerId,
@@ -237,7 +228,6 @@ class Avatar(KBEngine.Entity):
 			self.id, getattr(target, "className", "?"), target.id,
 			target.position.x, target.position.z,
 		)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		self.moveToPoint(
 			(target.position.x, self.position.y, target.position.z),
@@ -249,7 +239,6 @@ class Avatar(KBEngine.Entity):
 		KBEngine method.(引擎 moveToPoint 到点回调,entity.cpp:2948)
 		"""
 		msg = "Avatar[%i] arrived at (%.1f,%.1f)" % (self.id, self.position.x, self.position.z)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
 	def onMoveFailure(self, controllerId, userarg):
@@ -257,9 +246,26 @@ class Avatar(KBEngine.Entity):
 		KBEngine method.(引擎移动失败回调:目标丢失等)
 		"""
 		msg = "Avatar[%i] move FAILED at (%.1f,%.1f)" % (self.id, self.position.x, self.position.z)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
 	def notifyMove(self):
 		"""测试模型补充(组合根验收):实体调用其接口 ROLE 的回调(默认实现在 interfaces/ROLE.py)。"""
 		self.onMove(None, None)
+
+	def reqDaoProposal(self, a1):
+		"""Avatar cell Cell face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqSeizeBody(self, a1):
+		"""Avatar cell Cell face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass
+
+	def reqTradeInvite(self, a1):
+		"""Avatar cell Cell face declared in Avatar.def; implementation lands
+		with its own DEMO-GAME batch (engine checkDefMethod needs
+		the name and signature to exist)."""
+		pass

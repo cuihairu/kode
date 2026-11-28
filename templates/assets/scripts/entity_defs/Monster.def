@@ -9,14 +9,10 @@
 			<Type> UINT8 </Type>
 			<Flags> CELL_PUBLIC </Flags>
 		</aiState>
-		<!-- Dominant spirit root (DEMO-GAME-012): 0 = neutral (spawn
-		     tables may assign a root later); feeds the same five-element
-		     damage multiplier as Avatar attacks. -->
-		<dominantRoot>
-			<Type> UINT8 </Type>
-			<Flags> CELL_PUBLIC </Flags>
-			<Default> 0 </Default>
-		</dominantRoot>
+		<!-- dominantRoot (DEMO-GAME-012) is inherited from Avatar via the
+		     <Parent> chain; re-declaring it here crashes dbmgr at load
+		     (ScriptDefModule::addPropertyDescription "is exist").
+		     Monster default 0 = neutral; spawn tables may assign roots. -->
 	</Properties>
 
 	<CellMethods>

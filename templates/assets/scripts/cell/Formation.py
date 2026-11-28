@@ -41,5 +41,4 @@ class Formation(KBEngine.Entity):
 			msg = "Formation[%i] GATHER ring heal hp+%i targets=%s radius=%.1f" % (
 				self.id, heal, healed, radius,
 			)
-			print("[demo-evidence] %s" % msg, flush=True)
 			evidenceLog(msg)

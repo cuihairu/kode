@@ -25,7 +25,6 @@ class Formation(KBEngine.Entity):
 			self.id, getattr(self, "kind", "?"), getattr(self, "ownerId", 0),
 			cultivation.FORMATION_DURATION,
 		)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		self.destroy()
 

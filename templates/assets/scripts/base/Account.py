@@ -58,7 +58,6 @@ class Account(KBEngine.Proxy):
 			self.id, name, props["race"], props["spiritRoots"]))
 		msg = "Account[%i].reqCreateAvatar: %s race=%i spiritRoots=%s" % (
 			self.id, name, props["race"], props["spiritRoots"])
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		avatar = KBEngine.createEntityLocally("Avatar", props)
 		if avatar is None:

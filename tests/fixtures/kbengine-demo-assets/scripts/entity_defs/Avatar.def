@@ -13,7 +13,7 @@
 			<Type> STRING </Type>
 			<Flags> BASE_AND_CLIENT </Flags>
 			<Persistent> true </Persistent>
-			<Index> true </Index>
+			<Index> INDEX </Index>
 			<DatabaseLength> 64 </DatabaseLength>
 		</name>
 		<level>

@@ -10,12 +10,11 @@ class Pet(KBEngine.Entity):
 	def __init__(self):
 		KBEngine.Entity.__init__(self)
 
-	def onWriteToDB(self):
+	def onWriteToDB(self, *args):
 		"""
 		KBEngine method.写库登记锚(dbid 此时已分配,同 Item.onWriteToDB)。
 		"""
 		msg = "Pet[%i] SAVED dbid=%i name=%s owner=%i" % (
-			self.id, self.dbid, self.name, self.ownerDbid,
+			self.id, self.databaseID, self.name, self.ownerDbid,
 		)
-		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
