@@ -14,6 +14,8 @@
 |---|---|---|---|
 | 玩家修士 | 个人属性(气血/灵力/攻防等)、境界(练气→化神)、五灵根(金木水火土) | `Avatar.def` attrs/spiritRoots/realm | 本战役 009-011 |
 | 修炼成长 | 修炼得经验、境界突破、经验持久化 | `reqPractice` + `cellAddExperience` | 本战役 011 |
+| 种族 | 建角双族:人族/妖族,只开两族 | race 属性+reqCreateAvatar Arg+cultivation.RACES/normalize_race | 本战役 069 |
+| 配置表 | 配置用 Excel,导出为 py 常量模块 | config_tables/*.xlsx→scripts/export_game_tables.py→common/GameTables.py | 本战役 068 |
 | 五行战斗 | 攻守灵根相生相克伤害乘数 | `cultivation.affinity` 纯函数接入攻击路径 | 本战役 008/012 |
 | 战斗 | 近战/AOE、妖兽 AI、死亡重生(既有骨架,真机已验 DEMO-GAME-001..005) | `Monster`/`Avatar` cell 面 | 已有,扩展 012 |
 | 技能 | 技能表/学习升级/冷却/消耗/AOE 与 buff;SKILL_SLOT 槽消费贯通 | `reqCastSkill` 扩真技能 | 本战役 039 |
@@ -25,6 +27,7 @@
 | 宠物 | 召唤/跟随/协战/名册持久化 | `Pet`(base+cell)+petList | 本战役 017 |
 | 阵法 | 空间放置/范围效果/到期销毁 | `Formation`(base+cell) | 本战役 018 |
 | 宗门 | 创建/加入/退出/成员名册持久化 | `Sect`(base-only) | 本战役 019 |
+| 储物袋堆叠 | 背包 ITEM_INFO 堆叠合并+杀怪掉落入袋 | Inventory items ARRAY<ITEM_INFO>+bag.addItem(merge_stack 核) | 本战役 013 已勾 |
 | 宗门组织 | 职位(宗主/长老/内门/外门)、权限矩阵、部门(战斗堂/丹药堂/任务堂) | MEMBER_INFO 扩 rank/dept+权限纯函数 | 本战役 033 |
 | 任务 | 接任务系统(任务定义/接取/进度/交付/奖励),普通任务+宗门任务两类同面 | `Task` 实体+宗门任务榜 | 本战役 034 |
 | NPC | 空间驻留 NPC、对话、发布任务 | `Npc` 实体+Exposed 交互 | 本战役 035 |
