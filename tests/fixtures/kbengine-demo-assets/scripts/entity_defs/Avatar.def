@@ -575,7 +575,8 @@
 		     equipment dbid; capacity check on base. -->
 		<reqDepotDeposit>
 			<Exposed> true </Exposed>
-			<Arg> UINT64 </Arg>
+			<Arg> ITEM_ID </Arg>
+			<Arg> UINT16 </Arg>
 		</reqDepotDeposit>
 		<reqDepotWithdraw>
 			<Exposed> true </Exposed>

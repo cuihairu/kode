@@ -155,6 +155,28 @@ class CreationPropsTests(unittest.TestCase):
         self.assertEqual(set(roots), set(XX.ROOT_KEYS))
 
 
+class RemoveStackTests(unittest.TestCase):
+    # DEMO-GAME-014: mirror of merge_stack for outgoing flows (depot
+    # deposit, mail attachments, trade offers).
+    def test_remove_across_stacks(self):
+        stacks = [{"itemId": 1, "count": 30}, {"itemId": 2, "count": 5}, {"itemId": 1, "count": 40}]
+        result, removed = XX.remove_stack(stacks, 1, 50)
+        self.assertEqual(removed, 50)
+        self.assertEqual(result, [{"itemId": 2, "count": 5}, {"itemId": 1, "count": 20}])
+
+    def test_remove_insufficient_reports_actual(self):
+        stacks = [{"itemId": 1, "count": 10}]
+        result, removed = XX.remove_stack(stacks, 1, 99)
+        self.assertEqual(removed, 10)
+        self.assertEqual(result, [])
+
+    def test_remove_missing_id_untouched(self):
+        stacks = [{"itemId": 2, "count": 5}]
+        result, removed = XX.remove_stack(stacks, 1, 3)
+        self.assertEqual(removed, 0)
+        self.assertEqual(result, [{"itemId": 2, "count": 5}])
+
+
 class RaceTests(unittest.TestCase):
     # DEMO-GAME-069: only human (1) and yao (2) are open; anything else
     # normalizes to human.

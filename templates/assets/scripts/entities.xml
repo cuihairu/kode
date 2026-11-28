@@ -14,6 +14,9 @@
 	<Monster hasCell="true"></Monster>
 	<!-- Social / trade / mall / party (DEMO-GAME-046/047/049):
 	     transient base-only session + catalog entities. -->
+	<!-- Item (DEMO-GAME-014): persistent base-only item carrier
+	     (depot storage / mail attachments). -->
+	<Item hasBase="true"></Item>
 	<Trade hasBase="true"></Trade>
 	<Mall hasBase="true"></Mall>
 	<Party hasBase="true"></Party>

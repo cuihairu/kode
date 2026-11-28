@@ -10,7 +10,7 @@ DEMO_SPACE_INDEX = 1
 
 
 # 迷你 ARPG 战斗常数:见 common/DemoConsts.py(base/cell 共用)
-from DemoConsts import DEMO_LEVEL_UP_STEP, DEMO_RESPAWN_DELAY
+from DemoConsts import DEMO_BAG_CAPACITY, DEMO_LEVEL_UP_STEP, DEMO_RESPAWN_DELAY
 
 TIMER_RESPAWN = 1
 
@@ -167,3 +167,72 @@ class Avatar(KBEngine.Proxy):
 		客户端请求施放技能
 		"""
 		DEBUG_MSG("Avatar[%i].reqCastSkill: %i" % (self.id, skillId))
+
+	def reqDepotDeposit(self, itemId, count):
+		"""
+		Exposed.(DEMO-GAME-014/060 装备库存入)
+		背包堆叠→库:remove_stack 从袋里扣量,建 Item 实体(base-only 第四种
+		实体形态)承载,writeToDB 落 tbl_Item;dbid 由 dbmgr 在写库注册期分配,
+		故名册条目在写库回调里回填(回调签名 success, entity)。
+		"""
+		merged, removed = cultivation.remove_stack(list(self.bag.items), itemId, count)
+		if removed <= 0:
+			DEBUG_MSG("Avatar[%i].reqDepotDeposit: no itemId=%i in bag" % (self.id, itemId))
+			return
+		self.bag.items = merged
+
+		def onSaved(success, item):
+			if not success or item is None:
+				ERROR_MSG("Avatar[%i].reqDepotDeposit: writeToDB failed, refund itemId=%i count=%i" % (
+					self.id, itemId, removed))
+				refunded, _ = cultivation.merge_stack(
+					list(self.bag.items), itemId, removed, DEMO_BAG_CAPACITY)
+				self.bag.items = refunded
+				return
+			self.equipDepot.append({"dbid": item.dbid, "strengthen": 0})
+			msg = "Avatar[%i] DEPOSIT itemId=%i count=%i -> Item dbid=%i depot=%i" % (
+				self.id, itemId, removed, item.dbid, len(self.equipDepot))
+			print("[demo-evidence] %s" % msg, flush=True)
+			evidenceLog(msg)
+
+		item = KBEngine.createEntityLocally("Item", {
+			"itemId": itemId,
+			"itemType": 1,
+			"count": removed,
+			"ownerDbid": self.dbid,
+		})
+		if item is None:
+			ERROR_MSG("Avatar[%i].reqDepotDeposit: create Item failed" % self.id)
+			return
+		item.writeToDB(onSaved)
+
+	def reqDepotWithdraw(self, itemDbid):
+		"""
+		Exposed.(DEMO-GAME-014/060 装备库取出)
+		名册条目→找本机 Item 实体(demo 规模线性扫)→袋容量够则堆叠回袋,
+		deleteFromDB+destroy 销实体,名册摘条目。
+		"""
+		idx = next((i for i, slot in enumerate(self.equipDepot)
+			if slot.get("dbid") == itemDbid), None)
+		if idx is None:
+			DEBUG_MSG("Avatar[%i].reqDepotWithdraw: dbid=%i not in depot" % (self.id, itemDbid))
+			return
+		item = next((e for e in KBEngine.entities.values()
+			if getattr(e, "dbid", 0) == itemDbid
+			and getattr(e, "ownerDbid", 0) == self.dbid), None)
+		if item is None:
+			DEBUG_MSG("Avatar[%i].reqDepotWithdraw: Item entity dbid=%i not local" % (self.id, itemDbid))
+			return
+		merged, added = cultivation.merge_stack(
+			list(self.bag.items), item.itemId, item.count, DEMO_BAG_CAPACITY)
+		if added < item.count:
+			DEBUG_MSG("Avatar[%i].reqDepotWithdraw: bag full, keep dbid=%i in depot" % (self.id, itemDbid))
+			return
+		self.bag.items = merged
+		self.equipDepot = [sl for i, sl in enumerate(self.equipDepot) if i != idx]
+		item.deleteFromDB()
+		item.destroy()
+		msg = "Avatar[%i] WITHDRAW Item dbid=%i itemId=%i count=%i -> bag (depot=%i)" % (
+			self.id, itemDbid, item.itemId, item.count, len(self.equipDepot))
+		print("[demo-evidence] %s" % msg, flush=True)
+		evidenceLog(msg)

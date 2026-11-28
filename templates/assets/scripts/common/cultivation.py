@@ -232,3 +232,26 @@ RACES = (RACE_HUMAN, RACE_YAO)
 def normalize_race(race):
     """Clamp to an open race; anything but yao falls back to human."""
     return RACE_YAO if race == RACE_YAO else RACE_HUMAN
+
+
+def remove_stack(stacks, item_id, count):
+    """Remove count of item_id from a stack list; returns (stacks, removed).
+
+    Mirror of merge_stack for outgoing flows (depot deposit, mailing
+    attachments, trade offers). Empty stacks are dropped; `removed` reports
+    how much was actually available (caller decides refund semantics).
+    """
+    removed = 0
+    result = []
+    for slot in stacks:
+        cur_id = slot.get("itemId")
+        cur_count = slot.get("count", 0)
+        if cur_id != item_id or removed >= count:
+            result.append(dict(slot))
+            continue
+        take = min(count - removed, cur_count)
+        left = cur_count - take
+        removed += take
+        if left > 0:
+            result.append({"itemId": cur_id, "count": left})
+    return (result, removed)
