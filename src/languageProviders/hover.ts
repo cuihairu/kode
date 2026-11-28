@@ -6,7 +6,7 @@ import { documentEventCacheKey, findEventCallsCached } from '../eventApi';
 import { EntityMappingManager } from '../entityMapping';
 import { getDocumentLines } from '../backend/documentStore';
 import { getTypeStorageShape } from '../databaseSchema';
-import { getWorkspaceRootForDocument, findDefinitionTextByCategory, defBufferStampForRoot, resolveEntityAnnotationType, resolveEntityAnnotationTypeWithReason, resolveEntityFixedDictMember, getEntityCustomTypesSnapshot } from '../definitionWorkspace';
+import { getWorkspaceRootForDocument, getDefinitionWorkspaceLayout, findDefinitionTextByCategory, defBufferStampForRoot, resolveEntityAnnotationType, resolveEntityAnnotationTypeWithReason, resolveEntityFixedDictMember, getEntityCustomTypesSnapshot } from '../definitionWorkspace';
 import { getHookByName } from '../hooks';
 import { getEntryHookByName, isComponentEntryScriptFile } from '../backend/entryHooks';
 import { renderDefPropertyTimingNote } from '../backend/hookSequencing';
@@ -88,6 +88,14 @@ export let hoverInFlightGateForTests: (() => Promise<void>) | null = null;
 
 export function setHoverInFlightGateForTests(gate: (() => Promise<void>) | null): void {
   hoverInFlightGateForTests = gate;
+}
+
+/** Workspace types.xml registry path for any document (py/def alike); null
+ * when no workspace layout is resolvable, which leaves getTypeStorageShape
+ * alias-free instead of XML-parsing the document itself. */
+function typesXmlPathForDocument(document: vscode.TextDocument): string | null {
+  const root = getWorkspaceRootForDocument(document);
+  return root ? getDefinitionWorkspaceLayout(root).typesXmlPath : null;
 }
 
 /**
@@ -668,7 +676,13 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         raceWithBudget(
           'hover:fixeddict-key',
           this.resolveFixedDictKeyHover(manager, document, position, fdKeyHoverContext, sharedToken, timer)
-            .then(hover => hover ?? this.provideKnownHover(document, position, featureConfig, range, word)),
+            // KODE-DICTTYPE-001 restore: a non-FD container key (module/self/
+            // local dict literal) must reach the ordinary dict key-value face
+            // before the plain chain -- it used to be shadowed here because
+            // this branch returns unconditionally when a manager is wired.
+            .then(hover => hover
+              ?? this.buildDictValueTypeHover(document, position)
+              ?? this.provideKnownHover(document, position, featureConfig, range, word)),
           deadline.remainingMs(),
           sharedToken,
           // R2-F18:预算到期传播取消(见 def-method 分支)
@@ -694,7 +708,12 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
           'hover:self-property-type',
           this.resolveSelfPropertyAnnotationHover(
             manager, document, position, word, selfAccess, sharedToken, timer
-          ).then(hover => hover ?? this.provideKnownHover(document, position, featureConfig, range, word)),
+          ).then(hover => hover
+            // KODE-DICTTYPE-001 restore: this branch fires for every py hover
+            // when a manager is wired, so an inference miss here used to
+            // shadow the ordinary dict key-value face below entirely.
+            ?? this.buildDictValueTypeHover(document, position)
+            ?? this.provideKnownHover(document, position, featureConfig, range, word)),
           deadline.remainingMs(),
           sharedToken,
           // R2-F18:预算到期传播取消(见 def-method 分支)
@@ -1271,7 +1290,11 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         // IDX-REL-004: 内联 FIXED_DICT 的 typeName 是合成名,字面文本在
         // rawTypeName——形态判定优先字面(两线判定输入不变)
         const shapeTypeName = resolved.rawTypeName ?? resolved.typeName;
-        const shape = getTypeStorageShape(document.fileName, shapeTypeName);
+        // The registry path must be the workspace types.xml, never the
+        // document itself: py documents handed to getTypeStorageShape used to
+        // be XML-parsed (a `=` in Python source threw "Failed to locate XML
+        // token" and killed the whole self-property hover face).
+        const shape = getTypeStorageShape(typesXmlPathForDocument(document), shapeTypeName);
         if (shape.kind === 'fixedDict' || isFixedDictTypeName(shapeTypeName, [])) {
           markdown.appendMarkdown(fixedDictBehaviorNoteMarkdown());
         }

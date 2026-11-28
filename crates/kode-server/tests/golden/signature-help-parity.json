@@ -1,9 +1,9 @@
 {
   "generator": "kode-server dump-signature-help-golden",
-  "fileCount": 74,
-  "probeCount": 121690,
-  "hitCount": 7857,
-  "resolvedCount": 341,
+  "fileCount": 87,
+  "probeCount": 192161,
+  "hitCount": 10714,
+  "resolvedCount": 637,
   "files": [
     {
       "file": "tests/fixtures/electron-ws/.kbengine/inferred/scripts/base/Boxe.py",
@@ -49,11 +49,11 @@
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/base/Account.py",
-      "probeCount": 1656,
-      "hitCount": 58,
+      "probeCount": 6780,
+      "hitCount": 254,
       "entries": [
         {
-          "line": 29,
+          "line": 30,
           "call": {
             "methodName": "onLoginOK",
             "section": "ClientMethods"
@@ -64,7 +64,7 @@
             "documentation": "此调用是实体 def 声明的 ClientMethods 方法(接收者 self.ClientMethods)",
             "definition": {
               "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Account.def",
-              "line": 16,
+              "line": 24,
               "section": "ClientMethods",
               "exposed": false
             }
@@ -81,16 +81,84 @@
               "activeParameter": 0
             }
           ]
+        },
+        {
+          "line": 143,
+          "call": {
+            "methodName": "reqCreateAvatar",
+            "section": null
+          },
+          "help": {
+            "label": "def reqCreateAvatar(self, arg1: str, arg2: int)",
+            "parameters": [
+              "arg1: str",
+              "arg2: int"
+            ],
+            "documentation": "此调用是实体 def 声明的 BaseMethods 方法 · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Account.def",
+              "line": 29,
+              "section": "BaseMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 23,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 24,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 25,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 26,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 27,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 28,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 29,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 30,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 31,
+              "activeArgument": 1,
+              "activeParameter": 1
+            }
+          ]
         }
       ]
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/base/Avatar.py",
-      "probeCount": 4735,
-      "hitCount": 184,
+      "probeCount": 33493,
+      "hitCount": 1641,
       "entries": [
         {
-          "line": 46,
+          "line": 50,
           "call": {
             "methodName": "onRealmUp",
             "section": "ClientMethods"
@@ -103,7 +171,7 @@
             "documentation": "此调用是实体 def 声明的 ClientMethods 方法(接收者 self.ClientMethods)",
             "definition": {
               "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
-              "line": 93,
+              "line": 347,
               "section": "ClientMethods",
               "exposed": false
             }
@@ -167,7 +235,246 @@
           ]
         },
         {
-          "line": 101,
+          "line": 127,
+          "call": {
+            "methodName": "onFormationPlaced",
+            "section": "ClientMethods"
+          },
+          "help": {
+            "label": "def onFormationPlaced(self, arg1: str, arg2: int)",
+            "parameters": [
+              "arg1: str",
+              "arg2: int"
+            ],
+            "documentation": "此调用是实体 def 声明的 ClientMethods 方法(接收者 self.ClientMethods)",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 455,
+              "section": "ClientMethods",
+              "exposed": false
+            }
+          },
+          "activations": [
+            {
+              "character": 33,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 34,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 35,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 36,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 37,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 38,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 39,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 40,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 41,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 42,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 43,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 44,
+              "activeArgument": 1,
+              "activeParameter": 1
+            }
+          ]
+        },
+        {
+          "line": 260,
+          "call": {
+            "methodName": "reqJoinSect",
+            "section": null
+          },
+          "help": {
+            "label": "def reqJoinSect(self, arg1: int)",
+            "parameters": [
+              "arg1: int"
+            ],
+            "documentation": "此调用是实体 def 声明的 BaseMethods 方法 · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 754,
+              "section": "BaseMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 19,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 20,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 21,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 22,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 23,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 24,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 277,
+          "call": {
+            "methodName": "reqJoinSect",
+            "section": null
+          },
+          "help": {
+            "label": "def reqJoinSect(self, arg1: int)",
+            "parameters": [
+              "arg1: int"
+            ],
+            "documentation": "此调用是实体 def 声明的 BaseMethods 方法 · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 754,
+              "section": "BaseMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 19,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 20,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 21,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 22,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 23,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 24,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 289,
+          "call": {
+            "methodName": "reqCreateSect",
+            "section": null
+          },
+          "help": {
+            "label": "def reqCreateSect(self, arg1: str)",
+            "parameters": [
+              "arg1: str"
+            ],
+            "documentation": "此调用是实体 def 声明的 BaseMethods 方法 · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 750,
+              "section": "BaseMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 20,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 21,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 22,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 23,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 24,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 25,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 353,
           "call": {
             "methodName": "onLevelUp",
             "section": "ClientMethods"
@@ -180,7 +487,7 @@
             "documentation": "此调用是实体 def 声明的 ClientMethods 方法(接收者 self.ClientMethods)",
             "definition": {
               "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
-              "line": 99,
+              "line": 353,
               "section": "ClientMethods",
               "exposed": false
             }
@@ -239,7 +546,7 @@
           ]
         },
         {
-          "line": 141,
+          "line": 391,
           "call": {
             "methodName": "onMonsterNear",
             "section": "ClientMethods"
@@ -254,7 +561,7 @@
             "documentation": "此调用是实体 def 声明的 ClientMethods 方法(接收者 self.ClientMethods)",
             "definition": {
               "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
-              "line": 102,
+              "line": 356,
               "section": "ClientMethods",
               "exposed": false
             }
@@ -351,19 +658,507 @@
               "activeParameter": 2
             }
           ]
+        },
+        {
+          "line": 655,
+          "call": {
+            "methodName": "useTalismanBlast",
+            "section": "CellMethods"
+          },
+          "help": {
+            "label": "def useTalismanBlast(self, arg1: int, arg2: int)",
+            "parameters": [
+              "arg1: int",
+              "arg2: int"
+            ],
+            "documentation": "此调用是实体 def 声明的 CellMethods 方法(接收者 self.CellMethods)",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 819,
+              "section": "CellMethods",
+              "exposed": false
+            }
+          },
+          "activations": [
+            {
+              "character": 29,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 30,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 31,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 32,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 33,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 34,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 35,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 36,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 37,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 38,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 39,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 40,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 41,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 42,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 43,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 44,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 45,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 46,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 47,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 48,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 49,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 50,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 51,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 52,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 53,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 54,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 55,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 56,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 57,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 58,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 59,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 60,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 61,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 62,
+              "activeArgument": 1,
+              "activeParameter": 1
+            }
+          ]
+        },
+        {
+          "line": 683,
+          "call": {
+            "methodName": "onTalismanGained",
+            "section": "ClientMethods"
+          },
+          "help": {
+            "label": "def onTalismanGained(self, arg1: int)",
+            "parameters": [
+              "arg1: int"
+            ],
+            "documentation": "此调用是实体 def 声明的 ClientMethods 方法(接收者 self.ClientMethods)",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 472,
+              "section": "ClientMethods",
+              "exposed": false
+            }
+          },
+          "activations": [
+            {
+              "character": 32,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 33,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 34,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 35,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 36,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 37,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 38,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 39,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 40,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 41,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 42,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 43,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 44,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 45,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 46,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 47,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 48,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 49,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 50,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 51,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 52,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 702,
+          "call": {
+            "methodName": "onPetAdopted",
+            "section": "ClientMethods"
+          },
+          "help": {
+            "label": "def onPetAdopted(self, arg1: int)",
+            "parameters": [
+              "arg1: int"
+            ],
+            "documentation": "此调用是实体 def 声明的 ClientMethods 方法(接收者 self.ClientMethods)",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 467,
+              "section": "ClientMethods",
+              "exposed": false
+            }
+          },
+          "activations": [
+            {
+              "character": 28,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 29,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 30,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 31,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 32,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 33,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 34,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 35,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 36,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 37,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 38,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 39,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 40,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 41,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 42,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 43,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
         }
       ]
     },
     {
+      "file": "tests/fixtures/kbengine-demo-assets/scripts/base/Equipment.py",
+      "probeCount": 1499,
+      "hitCount": 107,
+      "entries": []
+    },
+    {
+      "file": "tests/fixtures/kbengine-demo-assets/scripts/base/Formation.py",
+      "probeCount": 1300,
+      "hitCount": 103,
+      "entries": []
+    },
+    {
+      "file": "tests/fixtures/kbengine-demo-assets/scripts/base/Inventory.py",
+      "probeCount": 777,
+      "hitCount": 6,
+      "entries": []
+    },
+    {
+      "file": "tests/fixtures/kbengine-demo-assets/scripts/base/Item.py",
+      "probeCount": 578,
+      "hitCount": 6,
+      "entries": []
+    },
+    {
+      "file": "tests/fixtures/kbengine-demo-assets/scripts/base/Mall.py",
+      "probeCount": 420,
+      "hitCount": 6,
+      "entries": []
+    },
+    {
+      "file": "tests/fixtures/kbengine-demo-assets/scripts/base/Monster.py",
+      "probeCount": 628,
+      "hitCount": 0,
+      "entries": []
+    },
+    {
+      "file": "tests/fixtures/kbengine-demo-assets/scripts/base/Party.py",
+      "probeCount": 997,
+      "hitCount": 6,
+      "entries": []
+    },
+    {
+      "file": "tests/fixtures/kbengine-demo-assets/scripts/base/Pet.py",
+      "probeCount": 528,
+      "hitCount": 6,
+      "entries": []
+    },
+    {
+      "file": "tests/fixtures/kbengine-demo-assets/scripts/base/Sect.py",
+      "probeCount": 1574,
+      "hitCount": 62,
+      "entries": []
+    },
+    {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/base/Space.py",
-      "probeCount": 960,
+      "probeCount": 912,
       "hitCount": 9,
       "entries": []
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/base/Spaces.py",
-      "probeCount": 1553,
+      "probeCount": 1604,
       "hitCount": 84,
+      "entries": []
+    },
+    {
+      "file": "tests/fixtures/kbengine-demo-assets/scripts/base/Talisman.py",
+      "probeCount": 276,
+      "hitCount": 6,
+      "entries": []
+    },
+    {
+      "file": "tests/fixtures/kbengine-demo-assets/scripts/base/Trade.py",
+      "probeCount": 1153,
+      "hitCount": 6,
       "entries": []
     },
     {
@@ -380,24 +1175,1269 @@
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/bots/Account.py",
-      "probeCount": 585,
-      "hitCount": 25,
+      "probeCount": 1072,
+      "hitCount": 10,
       "entries": [
         {
-          "line": 20,
+          "line": 27,
           "call": {
-            "methodName": "reqCreateAvatar",
+            "methodName": "reqSelectAvatar",
             "section": "BaseMethods"
           },
           "help": {
-            "label": "def reqCreateAvatar(self, arg1: str)",
+            "label": "def reqSelectAvatar(self, arg1: str)",
             "parameters": [
               "arg1: str"
             ],
             "documentation": "此调用是实体 def 声明的 BaseMethods 方法(接收者 self.BaseMethods) · **Exposed**: 可被客户端远程调用",
             "definition": {
               "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Account.def",
-              "line": 21,
+              "line": 37,
+              "section": "BaseMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 27,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 28,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 29,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 30,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "file": "tests/fixtures/kbengine-demo-assets/scripts/bots/Avatar.py",
+      "probeCount": 13338,
+      "hitCount": 246,
+      "entries": [
+        {
+          "line": 66,
+          "call": {
+            "methodName": "reqPractice",
+            "section": "BaseMethods"
+          },
+          "help": {
+            "label": "def reqPractice(self)",
+            "parameters": [],
+            "documentation": "此调用是实体 def 声明的 BaseMethods 方法(接收者 self.BaseMethods) · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 478,
+              "section": "BaseMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 24,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 25,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 71,
+          "call": {
+            "methodName": "reqAttack",
+            "section": "CellMethods"
+          },
+          "help": {
+            "label": "def reqAttack(self, arg1: int)",
+            "parameters": [
+              "arg1: int"
+            ],
+            "documentation": "此调用是实体 def 声明的 CellMethods 方法(接收者 self.CellMethods) · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 791,
+              "section": "CellMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 23,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 24,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 25,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 26,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 27,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 28,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 29,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 30,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 31,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 32,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 33,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 85,
+          "call": {
+            "methodName": "reqGoto",
+            "section": "CellMethods"
+          },
+          "help": {
+            "label": "def reqGoto(self)",
+            "parameters": [],
+            "documentation": "此调用是实体 def 声明的 CellMethods 方法(接收者 self.CellMethods) · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 784,
+              "section": "CellMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 21,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 22,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 104,
+          "call": {
+            "methodName": "reqPractice",
+            "section": "BaseMethods"
+          },
+          "help": {
+            "label": "def reqPractice(self)",
+            "parameters": [],
+            "documentation": "此调用是实体 def 声明的 BaseMethods 方法(接收者 self.BaseMethods) · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 478,
+              "section": "BaseMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 24,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 25,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 116,
+          "call": {
+            "methodName": "reqAttack",
+            "section": "CellMethods"
+          },
+          "help": {
+            "label": "def reqAttack(self, arg1: int)",
+            "parameters": [
+              "arg1: int"
+            ],
+            "documentation": "此调用是实体 def 声明的 CellMethods 方法(接收者 self.CellMethods) · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 791,
+              "section": "CellMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 22,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 23,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 24,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 25,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 26,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 27,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 28,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 29,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 30,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 31,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 32,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 33,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 34,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 35,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 36,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 37,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 38,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 39,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 40,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 135,
+          "call": {
+            "methodName": "reqPractice",
+            "section": "BaseMethods"
+          },
+          "help": {
+            "label": "def reqPractice(self)",
+            "parameters": [],
+            "documentation": "此调用是实体 def 声明的 BaseMethods 方法(接收者 self.BaseMethods) · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 478,
+              "section": "BaseMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 24,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 25,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 148,
+          "call": {
+            "methodName": "reqPlaceFormation",
+            "section": "BaseMethods"
+          },
+          "help": {
+            "label": "def reqPlaceFormation(self, arg1: str, arg2: float, arg3: float)",
+            "parameters": [
+              "arg1: str",
+              "arg2: float",
+              "arg3: float"
+            ],
+            "documentation": "此调用是实体 def 声明的 BaseMethods 方法(接收者 self.BaseMethods) · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 737,
+              "section": "BaseMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 31,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 32,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 33,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 34,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 35,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 36,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 37,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 38,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 39,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 40,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 41,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 42,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 43,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 44,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 45,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 46,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 47,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 48,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 49,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 50,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 51,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 52,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 53,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 54,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 55,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 56,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 57,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 58,
+              "activeArgument": 2,
+              "activeParameter": 2
+            },
+            {
+              "character": 59,
+              "activeArgument": 2,
+              "activeParameter": 2
+            },
+            {
+              "character": 60,
+              "activeArgument": 2,
+              "activeParameter": 2
+            },
+            {
+              "character": 61,
+              "activeArgument": 2,
+              "activeParameter": 2
+            },
+            {
+              "character": 62,
+              "activeArgument": 2,
+              "activeParameter": 2
+            },
+            {
+              "character": 63,
+              "activeArgument": 2,
+              "activeParameter": 2
+            },
+            {
+              "character": 64,
+              "activeArgument": 2,
+              "activeParameter": 2
+            },
+            {
+              "character": 65,
+              "activeArgument": 2,
+              "activeParameter": 2
+            },
+            {
+              "character": 66,
+              "activeArgument": 2,
+              "activeParameter": 2
+            },
+            {
+              "character": 67,
+              "activeArgument": 2,
+              "activeParameter": 2
+            },
+            {
+              "character": 68,
+              "activeArgument": 2,
+              "activeParameter": 2
+            },
+            {
+              "character": 69,
+              "activeArgument": 2,
+              "activeParameter": 2
+            },
+            {
+              "character": 70,
+              "activeArgument": 2,
+              "activeParameter": 2
+            },
+            {
+              "character": 71,
+              "activeArgument": 2,
+              "activeParameter": 2
+            },
+            {
+              "character": 72,
+              "activeArgument": 2,
+              "activeParameter": 2
+            },
+            {
+              "character": 73,
+              "activeArgument": 2,
+              "activeParameter": 2
+            },
+            {
+              "character": 74,
+              "activeArgument": 2,
+              "activeParameter": 2
+            }
+          ]
+        },
+        {
+          "line": 154,
+          "call": {
+            "methodName": "reqSectChat",
+            "section": "BaseMethods"
+          },
+          "help": {
+            "label": "def reqSectChat(self, arg1: str)",
+            "parameters": [
+              "arg1: str"
+            ],
+            "documentation": "此调用是实体 def 声明的 BaseMethods 方法(接收者 self.BaseMethods) · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 761,
+              "section": "BaseMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 25,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 26,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 27,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 28,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 29,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 30,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 31,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 32,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 33,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 34,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 35,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 36,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 37,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 38,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 39,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 40,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 41,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 42,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 43,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 44,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 45,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 46,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 47,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 48,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 49,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 50,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 51,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 52,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 53,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 54,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 55,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 56,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 57,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 58,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 59,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 60,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 61,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 62,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 63,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 64,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 65,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 166,
+          "call": {
+            "methodName": "reqAdoptPet",
+            "section": "BaseMethods"
+          },
+          "help": {
+            "label": "def reqAdoptPet(self, arg1: str)",
+            "parameters": [
+              "arg1: str"
+            ],
+            "documentation": "此调用是实体 def 声明的 BaseMethods 方法(接收者 self.BaseMethods) · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 684,
+              "section": "BaseMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 23,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 24,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 25,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 26,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 27,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 28,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 29,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 30,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 31,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 32,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 33,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 34,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 35,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 36,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 37,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 38,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 39,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 40,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 41,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 42,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 43,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 44,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 45,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 46,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 47,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 48,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 49,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 50,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 51,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 52,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 53,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 54,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 55,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 56,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 57,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 58,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 59,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 60,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 61,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 62,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 63,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 167,
+          "call": {
+            "methodName": "reqForgeTalisman",
+            "section": "BaseMethods"
+          },
+          "help": {
+            "label": "def reqForgeTalisman(self)",
+            "parameters": [],
+            "documentation": "此调用是实体 def 声明的 BaseMethods 方法(接收者 self.BaseMethods) · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 767,
+              "section": "BaseMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 28,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 29,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 175,
+          "call": {
+            "methodName": "reqJoinSectByName",
+            "section": "BaseMethods"
+          },
+          "help": {
+            "label": "def reqJoinSectByName(self, arg1: str)",
+            "parameters": [
+              "arg1: str"
+            ],
+            "documentation": "此调用是实体 def 声明的 BaseMethods 方法(接收者 self.BaseMethods) · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 773,
+              "section": "BaseMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 30,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 31,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 32,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 33,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 34,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 35,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 36,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 37,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 38,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 39,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 40,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 41,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 42,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 186,
+          "call": {
+            "methodName": "reqSummonPet",
+            "section": "BaseMethods"
+          },
+          "help": {
+            "label": "def reqSummonPet(self, arg1: int)",
+            "parameters": [
+              "arg1: int"
+            ],
+            "documentation": "此调用是实体 def 声明的 BaseMethods 方法(接收者 self.BaseMethods) · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 688,
+              "section": "BaseMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 25,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 26,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 27,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 28,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 29,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 30,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 31,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 32,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 33,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 197,
+          "call": {
+            "methodName": "reqUseTalisman",
+            "section": "BaseMethods"
+          },
+          "help": {
+            "label": "def reqUseTalisman(self, arg1: int)",
+            "parameters": [
+              "arg1: int"
+            ],
+            "documentation": "此调用是实体 def 声明的 BaseMethods 方法(接收者 self.BaseMethods) · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 677,
               "section": "BaseMethods",
               "exposed": true
             }
@@ -472,377 +2512,151 @@
               "character": 40,
               "activeArgument": 0,
               "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 207,
+          "call": {
+            "methodName": "reqPractice",
+            "section": "BaseMethods"
+          },
+          "help": {
+            "label": "def reqPractice(self)",
+            "parameters": [],
+            "documentation": "此调用是实体 def 声明的 BaseMethods 方法(接收者 self.BaseMethods) · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 478,
+              "section": "BaseMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 25,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 26,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 210,
+          "call": {
+            "methodName": "reqAttack",
+            "section": "CellMethods"
+          },
+          "help": {
+            "label": "def reqAttack(self, arg1: int)",
+            "parameters": [
+              "arg1: int"
+            ],
+            "documentation": "此调用是实体 def 声明的 CellMethods 方法(接收者 self.CellMethods) · **Exposed**: 可被客户端远程调用",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 791,
+              "section": "CellMethods",
+              "exposed": true
+            }
+          },
+          "activations": [
+            {
+              "character": 23,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 24,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 25,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 26,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 27,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 28,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 29,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 30,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 31,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 32,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 33,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 34,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 35,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 36,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 37,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 38,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 39,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 40,
+              "activeArgument": 0,
+              "activeParameter": 0
             },
             {
               "character": 41,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 42,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 43,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 44,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 45,
-              "activeArgument": 0,
-              "activeParameter": 0
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "file": "tests/fixtures/kbengine-demo-assets/scripts/bots/Avatar.py",
-      "probeCount": 4420,
-      "hitCount": 74,
-      "entries": [
-        {
-          "line": 49,
-          "call": {
-            "methodName": "reqAttack",
-            "section": "CellMethods"
-          },
-          "help": {
-            "label": "def reqAttack(self, arg1: int)",
-            "parameters": [
-              "arg1: int"
-            ],
-            "documentation": "此调用是实体 def 声明的 CellMethods 方法(接收者 self.CellMethods) · **Exposed**: 可被客户端远程调用",
-            "definition": {
-              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
-              "line": 141,
-              "section": "CellMethods",
-              "exposed": true
-            }
-          },
-          "activations": [
-            {
-              "character": 23,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 24,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 25,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 26,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 27,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 28,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 29,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 30,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 31,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 32,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 33,
-              "activeArgument": 0,
-              "activeParameter": 0
-            }
-          ]
-        },
-        {
-          "line": 63,
-          "call": {
-            "methodName": "reqGoto",
-            "section": "CellMethods"
-          },
-          "help": {
-            "label": "def reqGoto(self)",
-            "parameters": [],
-            "documentation": "此调用是实体 def 声明的 CellMethods 方法(接收者 self.CellMethods) · **Exposed**: 可被客户端远程调用",
-            "definition": {
-              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
-              "line": 134,
-              "section": "CellMethods",
-              "exposed": true
-            }
-          },
-          "activations": [
-            {
-              "character": 21,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 22,
-              "activeArgument": 0,
-              "activeParameter": 0
-            }
-          ]
-        },
-        {
-          "line": 89,
-          "call": {
-            "methodName": "reqAttack",
-            "section": "CellMethods"
-          },
-          "help": {
-            "label": "def reqAttack(self, arg1: int)",
-            "parameters": [
-              "arg1: int"
-            ],
-            "documentation": "此调用是实体 def 声明的 CellMethods 方法(接收者 self.CellMethods) · **Exposed**: 可被客户端远程调用",
-            "definition": {
-              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
-              "line": 141,
-              "section": "CellMethods",
-              "exposed": true
-            }
-          },
-          "activations": [
-            {
-              "character": 22,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 23,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 24,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 25,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 26,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 27,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 28,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 29,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 30,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 31,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 32,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 33,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 34,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 35,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 36,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 37,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 38,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 39,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 40,
-              "activeArgument": 0,
-              "activeParameter": 0
-            }
-          ]
-        },
-        {
-          "line": 125,
-          "call": {
-            "methodName": "reqAttack",
-            "section": "CellMethods"
-          },
-          "help": {
-            "label": "def reqAttack(self, arg1: int)",
-            "parameters": [
-              "arg1: int"
-            ],
-            "documentation": "此调用是实体 def 声明的 CellMethods 方法(接收者 self.CellMethods) · **Exposed**: 可被客户端远程调用",
-            "definition": {
-              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
-              "line": 141,
-              "section": "CellMethods",
-              "exposed": true
-            }
-          },
-          "activations": [
-            {
-              "character": 22,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 23,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 24,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 25,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 26,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 27,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 28,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 29,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 30,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 31,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 32,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 33,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 34,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 35,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 36,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 37,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 38,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 39,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 40,
               "activeArgument": 0,
               "activeParameter": 0
             }
@@ -864,11 +2678,11 @@
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/cell/Avatar.py",
-      "probeCount": 7754,
-      "hitCount": 286,
+      "probeCount": 8835,
+      "hitCount": 311,
       "entries": [
         {
-          "line": 47,
+          "line": 56,
           "call": {
             "methodName": "receiveDamage",
             "section": null
@@ -882,7 +2696,7 @@
             "documentation": "此调用是实体 def 声明的 CellMethods 方法",
             "definition": {
               "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
-              "line": 137,
+              "line": 787,
               "section": "CellMethods",
               "exposed": false
             }
@@ -930,113 +2744,53 @@
             },
             {
               "character": 30,
-              "activeArgument": 0,
-              "activeParameter": 0
+              "activeArgument": 1,
+              "activeParameter": 1
             },
             {
               "character": 31,
-              "activeArgument": 0,
-              "activeParameter": 0
+              "activeArgument": 1,
+              "activeParameter": 1
             },
             {
               "character": 32,
-              "activeArgument": 0,
-              "activeParameter": 0
+              "activeArgument": 1,
+              "activeParameter": 1
             },
             {
               "character": 33,
-              "activeArgument": 0,
-              "activeParameter": 0
+              "activeArgument": 1,
+              "activeParameter": 1
             },
             {
               "character": 34,
-              "activeArgument": 0,
-              "activeParameter": 0
+              "activeArgument": 1,
+              "activeParameter": 1
             },
             {
               "character": 35,
-              "activeArgument": 0,
-              "activeParameter": 0
+              "activeArgument": 1,
+              "activeParameter": 1
             },
             {
               "character": 36,
-              "activeArgument": 0,
-              "activeParameter": 0
+              "activeArgument": 1,
+              "activeParameter": 1
             },
             {
               "character": 37,
-              "activeArgument": 0,
-              "activeParameter": 0
+              "activeArgument": 1,
+              "activeParameter": 1
             },
             {
               "character": 38,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 39,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 40,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 41,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 42,
-              "activeArgument": 1,
-              "activeParameter": 1
-            },
-            {
-              "character": 43,
-              "activeArgument": 1,
-              "activeParameter": 1
-            },
-            {
-              "character": 44,
-              "activeArgument": 1,
-              "activeParameter": 1
-            },
-            {
-              "character": 45,
-              "activeArgument": 1,
-              "activeParameter": 1
-            },
-            {
-              "character": 46,
-              "activeArgument": 1,
-              "activeParameter": 1
-            },
-            {
-              "character": 47,
-              "activeArgument": 1,
-              "activeParameter": 1
-            },
-            {
-              "character": 48,
-              "activeArgument": 1,
-              "activeParameter": 1
-            },
-            {
-              "character": 49,
-              "activeArgument": 1,
-              "activeParameter": 1
-            },
-            {
-              "character": 50,
               "activeArgument": 1,
               "activeParameter": 1
             }
           ]
         },
         {
-          "line": 83,
+          "line": 91,
           "call": {
             "methodName": "reqRadarPing",
             "section": null
@@ -1047,7 +2801,7 @@
             "documentation": "此调用是实体 def 声明的 CellMethods 方法",
             "definition": {
               "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
-              "line": 132,
+              "line": 782,
               "section": "CellMethods",
               "exposed": false
             }
@@ -1066,7 +2820,7 @@
           ]
         },
         {
-          "line": 124,
+          "line": 130,
           "call": {
             "methodName": "onRadarPush",
             "section": null
@@ -1081,7 +2835,7 @@
             "documentation": "此调用是实体 def 声明的 BaseMethods 方法",
             "definition": {
               "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
-              "line": 122,
+              "line": 490,
               "section": "BaseMethods",
               "exposed": false
             }
@@ -1305,7 +3059,110 @@
           ]
         },
         {
-          "line": 156,
+          "line": 147,
+          "call": {
+            "methodName": "receiveDamage",
+            "section": null
+          },
+          "help": {
+            "label": "def receiveDamage(self, arg1: int, arg2: int)",
+            "parameters": [
+              "arg1: int",
+              "arg2: int"
+            ],
+            "documentation": "此调用是实体 def 声明的 CellMethods 方法",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 787,
+              "section": "CellMethods",
+              "exposed": false
+            }
+          },
+          "activations": [
+            {
+              "character": 18,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 19,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 20,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 21,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 22,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 23,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 24,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 25,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 26,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 27,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 28,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 29,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 30,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 31,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 32,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 33,
+              "activeArgument": 1,
+              "activeParameter": 1
+            }
+          ]
+        },
+        {
+          "line": 178,
           "call": {
             "methodName": "onAvatarDead",
             "section": null
@@ -1316,7 +3173,7 @@
             "documentation": "此调用是实体 def 声明的 BaseMethods 方法",
             "definition": {
               "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
-              "line": 120,
+              "line": 488,
               "section": "BaseMethods",
               "exposed": false
             }
@@ -1335,7 +3192,7 @@
           ]
         },
         {
-          "line": 163,
+          "line": 185,
           "call": {
             "methodName": "onMonsterNear",
             "section": "ClientMethods"
@@ -1350,7 +3207,7 @@
             "documentation": "此调用是实体 def 声明的 ClientMethods 方法(接收者 self.ClientMethods)",
             "definition": {
               "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
-              "line": 102,
+              "line": 356,
               "section": "ClientMethods",
               "exposed": false
             }
@@ -1454,7 +3311,7 @@
           ]
         },
         {
-          "line": 174,
+          "line": 195,
           "call": {
             "methodName": "onRadarPush",
             "section": null
@@ -1469,7 +3326,7 @@
             "documentation": "此调用是实体 def 声明的 BaseMethods 方法",
             "definition": {
               "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
-              "line": 122,
+              "line": 490,
               "section": "BaseMethods",
               "exposed": false
             }
@@ -1488,7 +3345,7 @@
           ]
         },
         {
-          "line": 235,
+          "line": 253,
           "call": {
             "methodName": "onMove",
             "section": null
@@ -1579,18 +3436,24 @@
       "entries": []
     },
     {
+      "file": "tests/fixtures/kbengine-demo-assets/scripts/cell/Formation.py",
+      "probeCount": 1169,
+      "hitCount": 58,
+      "entries": []
+    },
+    {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/cell/Inventory.py",
-      "probeCount": 516,
-      "hitCount": 27,
+      "probeCount": 1273,
+      "hitCount": 70,
       "entries": []
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/cell/Monster.py",
-      "probeCount": 5682,
-      "hitCount": 405,
+      "probeCount": 6879,
+      "hitCount": 496,
       "entries": [
         {
-          "line": 75,
+          "line": 76,
           "call": {
             "methodName": "onDamaged",
             "section": null
@@ -1603,7 +3466,7 @@
             "documentation": "此调用是实体 def 声明的 CellMethods 方法",
             "definition": {
               "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Monster.def",
-              "line": 18,
+              "line": 22,
               "section": "CellMethods",
               "exposed": false
             }
@@ -1672,7 +3535,7 @@
           ]
         },
         {
-          "line": 76,
+          "line": 77,
           "call": {
             "methodName": "receiveDamage",
             "section": null
@@ -1686,7 +3549,7 @@
             "documentation": "此调用是实体 def 声明的 CellMethods 方法",
             "definition": {
               "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
-              "line": 137,
+              "line": 787,
               "section": "CellMethods",
               "exposed": false
             }
@@ -1825,7 +3688,7 @@
           ]
         },
         {
-          "line": 83,
+          "line": 84,
           "call": {
             "methodName": "cellAddExperience",
             "section": null
@@ -1838,7 +3701,7 @@
             "documentation": "此调用是实体 def 声明的 BaseMethods 方法",
             "definition": {
               "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
-              "line": 117,
+              "line": 485,
               "section": "BaseMethods",
               "exposed": false
             }
@@ -1937,56 +3800,36 @@
           ]
         },
         {
-          "line": 93,
+          "line": 90,
           "call": {
-            "methodName": "respawn",
+            "methodName": "addItem",
             "section": null
           },
           "help": {
-            "label": "def respawn(self)",
-            "parameters": [],
-            "documentation": "此调用是实体 def 声明的 CellMethods 方法",
-            "definition": {
-              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
-              "line": 130,
-              "section": "CellMethods",
-              "exposed": false
-            }
-          },
-          "activations": [
-            {
-              "character": 14,
-              "activeArgument": 0,
-              "activeParameter": 0
-            },
-            {
-              "character": 15,
-              "activeArgument": 0,
-              "activeParameter": 0
-            }
-          ]
-        },
-        {
-          "line": 179,
-          "call": {
-            "methodName": "receiveDamage",
-            "section": null
-          },
-          "help": {
-            "label": "def receiveDamage(self, arg1: int, arg2: int)",
+            "label": "def addItem(self, arg1, arg2: int)",
             "parameters": [
-              "arg1: int",
+              "arg1",
               "arg2: int"
             ],
             "documentation": "此调用是实体 def 声明的 CellMethods 方法",
             "definition": {
-              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
-              "line": 137,
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/components/Inventory.def",
+              "line": 26,
               "section": "CellMethods",
               "exposed": false
             }
           },
           "activations": [
+            {
+              "character": 22,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 23,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
             {
               "character": 24,
               "activeArgument": 0,
@@ -2074,38 +3917,38 @@
             },
             {
               "character": 41,
-              "activeArgument": 0,
-              "activeParameter": 0
+              "activeArgument": 1,
+              "activeParameter": 1
             },
             {
               "character": 42,
-              "activeArgument": 0,
-              "activeParameter": 0
+              "activeArgument": 1,
+              "activeParameter": 1
             },
             {
               "character": 43,
-              "activeArgument": 0,
-              "activeParameter": 0
+              "activeArgument": 1,
+              "activeParameter": 1
             },
             {
               "character": 44,
-              "activeArgument": 0,
-              "activeParameter": 0
+              "activeArgument": 1,
+              "activeParameter": 1
             },
             {
               "character": 45,
-              "activeArgument": 0,
-              "activeParameter": 0
+              "activeArgument": 1,
+              "activeParameter": 1
             },
             {
               "character": 46,
-              "activeArgument": 0,
-              "activeParameter": 0
+              "activeArgument": 1,
+              "activeParameter": 1
             },
             {
               "character": 47,
-              "activeArgument": 0,
-              "activeParameter": 0
+              "activeArgument": 1,
+              "activeParameter": 1
             },
             {
               "character": 48,
@@ -2151,15 +3994,189 @@
               "character": 56,
               "activeArgument": 1,
               "activeParameter": 1
+            },
+            {
+              "character": 57,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 58,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 59,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 60,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 61,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 62,
+              "activeArgument": 1,
+              "activeParameter": 1
+            }
+          ]
+        },
+        {
+          "line": 95,
+          "call": {
+            "methodName": "respawn",
+            "section": null
+          },
+          "help": {
+            "label": "def respawn(self)",
+            "parameters": [],
+            "documentation": "此调用是实体 def 声明的 CellMethods 方法",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 780,
+              "section": "CellMethods",
+              "exposed": false
+            }
+          },
+          "activations": [
+            {
+              "character": 14,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 15,
+              "activeArgument": 0,
+              "activeParameter": 0
+            }
+          ]
+        },
+        {
+          "line": 207,
+          "call": {
+            "methodName": "receiveDamage",
+            "section": null
+          },
+          "help": {
+            "label": "def receiveDamage(self, arg1: int, arg2: int)",
+            "parameters": [
+              "arg1: int",
+              "arg2: int"
+            ],
+            "documentation": "此调用是实体 def 声明的 CellMethods 方法",
+            "definition": {
+              "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+              "line": 787,
+              "section": "CellMethods",
+              "exposed": false
+            }
+          },
+          "activations": [
+            {
+              "character": 24,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 25,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 26,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 27,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 28,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 29,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 30,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 31,
+              "activeArgument": 0,
+              "activeParameter": 0
+            },
+            {
+              "character": 32,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 33,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 34,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 35,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 36,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 37,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 38,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 39,
+              "activeArgument": 1,
+              "activeParameter": 1
+            },
+            {
+              "character": 40,
+              "activeArgument": 1,
+              "activeParameter": 1
             }
           ]
         }
       ]
     },
     {
+      "file": "tests/fixtures/kbengine-demo-assets/scripts/cell/Pet.py",
+      "probeCount": 1891,
+      "hitCount": 213,
+      "entries": []
+    },
+    {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/cell/Space.py",
-      "probeCount": 1944,
-      "hitCount": 145,
+      "probeCount": 2984,
+      "hitCount": 268,
       "entries": []
     },
     {
@@ -2237,7 +4254,7 @@
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/client/Avatar.py",
-      "probeCount": 397,
+      "probeCount": 5353,
       "hitCount": 0,
       "entries": []
     },
@@ -2249,7 +4266,7 @@
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/common/DemoConsts.py",
-      "probeCount": 1904,
+      "probeCount": 3003,
       "hitCount": 0,
       "entries": []
     },
@@ -2261,8 +4278,8 @@
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/common/KBEDebug.py",
-      "probeCount": 971,
-      "hitCount": 174,
+      "probeCount": 1949,
+      "hitCount": 224,
       "entries": []
     },
     {
@@ -2273,8 +4290,8 @@
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/common/cultivation.py",
-      "probeCount": 7307,
-      "hitCount": 204,
+      "probeCount": 10590,
+      "hitCount": 334,
       "entries": []
     },
     {

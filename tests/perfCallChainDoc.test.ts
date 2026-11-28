@@ -348,13 +348,16 @@ const ANCHORS: Array<[string, number, string]> = [
   // completion python 语境打点 944 → 948;extension.ts 退役 fileModifiedTime
   // 解构与 fire 两行(260/795)→ 其后锚 503/615 → 502/614(diagnosticScheduler
   // 228/258 与其余锚不动)。出处随 baseline 锁步。
-  ['src/activate/languageServices.ts', 241, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 314, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 413, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 156, "startLanguageServiceOperation('completion'"],
+  // 2026-11-28 (typesXmlPathForDocument + dict-face fallback): no import
+  // changes in languageServices.ts; four probes re-anchored 241/314/413/156
+  // -> 242/315/414/157, python-context completion probe 973 -> 977.
+  ['src/activate/languageServices.ts', 242, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 315, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 414, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 157, "startLanguageServiceOperation('completion'"],
   // 2026-11-27(index-ready inlay 刷新):装配区 +9 行(typeInlayHintsProviderInstance
   // 变量与 onIndexReady().finally fire 块)→ completion 打点锚 964→973(真位重探)。
-  ['src/activate/languageServices.ts', 973, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 977, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
@@ -549,10 +552,12 @@ const ANCHORS: Array<[string, number, string]> = [
   // RUST-140 批 3(signatureHelp 接线):hover.ts 顶部 +1 行 import
   // (serveSignatureHelpFromRust),其后 provideHover 真位重探 315→316,
   // 出处随 baseline 锁步。
-  // 2026-11-28(CREATE-06 re-probe): the createNamespace timeline branch on
+  // 2026-11-28 (CREATE-06 re-probe): the createNamespace timeline branch on
   // __init__ declarations added +1 net line above the shared entry, so
   // provideHover re-probed 320->321; provenance follows the baseline lockstep.
-  ['src/languageProviders/hover.ts', 321, 'provideHover('],
+  // 2026-11-28 (dict-face restore): typesXmlPathForDocument helper +8 lines
+  // above the entry, provideHover re-probed 321->329.
+  ['src/languageProviders/hover.ts', 329, 'provideHover('],
   ['src/languageProviders/navigation.ts', 48, 'shadowCompareDefinition'],
   // 2026-11-09(flags 别名归一批):validation.ts 顶部加 FLAG_DOMAIN_ALIAS
   // import(+1 行),其后 validation.ts 三锚点真位重探 13→14/37→38/255→256,

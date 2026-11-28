@@ -31,7 +31,10 @@ export const KBENGINE_SIDEBAR_VIEW_IDS: readonly string[] = [
   'kbengine.debugTargets',
   'kbengine.config',
   'kbengine.gitHistory',
-  'kbengine.gitRangeHistory'
+  'kbengine.gitRangeHistory',
+  // KODE-DIAG-SIDEBAR: tree-backed diagnostics view container declared in
+  // package.json; its real provider takes over in activate/monitoring.ts.
+  'kbengine.diagnosticsTools'
 ];
 
 export interface StartupViewPlaceholderDeps {

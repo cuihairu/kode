@@ -77,23 +77,29 @@ describe('rustSymbolsToIndexedMethodLocations', () => {
     const text = readFixture('Monster.py');
     const symbols = fileSymbols(path, [
       // 2026-11-07:DEMO-GAME-002 AI 状态机落地(决策/执行分离),方法面全量锁定
-      sym('__init__', 17, 1, 27, [['addTimer', 26, 2]]),
-      sym('onAggro', 28, 1, 34),
-      sym('onDamaged', 35, 1, 44),
-      sym('onMove', 45, 1, 54),
-      sym('onMoveOver', 55, 1, 60),
-      sym('onMoveFailure', 61, 1, 67),
-      sym('receiveDamage', 68, 1, 90, [['onDamaged', 74, 2], ['destroy', 88, 3]]),
-      sym('think', 90, 1, 93, [['respawn', 92, 2]]),
-      sym('_pickTarget', 94, 1, 119, [['entitiesInRange', 108, 11]]),
-      sym('_setState', 121, 1, 132),
-      sym('_moveToPoint', 134, 1, 137, [['moveToPoint', 136, 2]]),
-      sym('onTimer', 138, 1, 188, [
-        ['_pickTarget', 146, 11],
-        ['_setState', 161, 2],
-        ['_moveToPoint', 165, 4],
-        ['moveToEntity', 172, 4],
-        ['_moveToPoint', 186, 4]
+      // 2026-11-29 re-anchor: demo formation batch added _bindScale and the
+      // formation probe inside onTimer, shifting every later def (dumped fresh
+      // from parsePythonMethodBlocks; canned calls keep the Rust shape:
+      // 0-based line + self-column character).
+      sym('__init__', 18, 1, 29, [['addTimer', 28, 2]]),
+      sym('onAggro', 30, 1, 36),
+      sym('onDamaged', 37, 1, 45),
+      sym('onMove', 46, 1, 55),
+      sym('onMoveOver', 56, 1, 61),
+      sym('onMoveFailure', 62, 1, 68),
+      sym('receiveDamage', 69, 1, 91, [['onDamaged', 75, 2], ['destroy', 90, 3]]),
+      sym('think', 92, 1, 95, [['respawn', 94, 2]]),
+      sym('_pickTarget', 96, 1, 122, [['entitiesInRange', 110, 11]]),
+      sym('_bindScale', 123, 1, 136, [['entitiesInRange', 128, 11]]),
+      sym('_setState', 137, 1, 148),
+      sym('_moveToPoint', 149, 1, 152, [['moveToPoint', 151, 2]]),
+      sym('onTimer', 153, 1, 217, [
+        ['_bindScale', 161, 10],
+        ['_pickTarget', 166, 11],
+        ['_setState', 181, 2],
+        ['_moveToPoint', 185, 4],
+        ['moveToEntity', 192, 4],
+        ['_moveToPoint', 215, 4]
       ])
     ]);
     const rust = rustSymbolsToIndexedMethodLocations([{ path, text }], symbols);
@@ -108,20 +114,28 @@ describe('rustSymbolsToIndexedMethodLocations', () => {
       // onLeaveSpace 之后锚点 +18(锚点证据块见 docs/acceptance-evidence/DEMO-GAME-002.md);
       // 2026-11-07:DEMO-GAME-004 入场雷达 reqRadarPing + 受击基座中继 + reqGoto/
       // onMoveOver/onMoveFailure 走位组,后续锚点随插入位移。
-      sym('__init__', 10, 1, 16, [['addTimer', 15, 2]]),
-      sym('onTimer', 17, 1, 34, [['entitiesInRange', 24, 11], ['_attack', 33, 3]]),
-      sym('_attack', 35, 1, 47),
-      sym('reqAttack', 48, 1, 63, [['_attack', 62, 2]]),
-      sym('respawn', 64, 1, 70),
-      sym('onEnterSpace', 71, 1, 82, [['reqRadarPing', 82, 2]]),
-      sym('reqRadarPing', 84, 1, 127),
-      sym('receiveDamage', 129, 1, 175),
-      sym('onLeaveSpace', 177, 1, 182),
-      sym('onMove', 184, 1, 192),
-      sym('reqGoto', 194, 1, 213, [['moveToPoint', 211, 2]]),
-      sym('onMoveOver', 216, 1, 221),
-      sym('onMoveFailure', 224, 1, 230),
-      sym('notifyMove', 232, 1, 234, [['onMove', 234, 2]])
+      // 2026-11-29 re-anchor: talisman blast + dao/trade demo batches inserted
+      // useTalismanBlast (after reqRadarPing) and the reqDaoProposal/
+      // reqSeizeBody/reqTradeInvite trio at file tail; anchors re-dumped from
+      // parsePythonMethodBlocks (canned calls: 0-based line + self column).
+      sym('__init__', 11, 1, 17, [['addTimer', 16, 2]]),
+      sym('onTimer', 18, 1, 35, [['entitiesInRange', 25, 11], ['_attack', 34, 3]]),
+      sym('_attack', 36, 1, 56),
+      sym('reqAttack', 57, 1, 72, [['_attack', 71, 2]]),
+      sym('respawn', 73, 1, 79),
+      sym('onEnterSpace', 80, 1, 91, [['reqRadarPing', 90, 2]]),
+      sym('reqRadarPing', 92, 1, 133),
+      sym('useTalismanBlast', 134, 1, 152, [['entitiesInRange', 141, 11]]),
+      sym('receiveDamage', 153, 1, 197),
+      sym('onLeaveSpace', 198, 1, 204),
+      sym('onMove', 205, 1, 214),
+      sym('reqGoto', 215, 1, 235, [['moveToPoint', 231, 2]]),
+      sym('onMoveOver', 236, 1, 242),
+      sym('onMoveFailure', 243, 1, 249),
+      sym('notifyMove', 250, 1, 253, [['onMove', 252, 2]]),
+      sym('reqDaoProposal', 254, 1, 259),
+      sym('reqSeizeBody', 260, 1, 265),
+      sym('reqTradeInvite', 266, 1, 271)
     ]);
     const rust = rustSymbolsToIndexedMethodLocations([{ path, text }], symbols);
     expect(normalized(rust)).toEqual(normalized(parsePythonMethodBlocks(text, path)));

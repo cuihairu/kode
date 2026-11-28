@@ -331,17 +331,29 @@ suite('dependency/graph Rust↔TS 实体级投影对拍(真实 kode-server)', ()
       ];
       expect([...rust.entityNames].sort()).toEqual(registered.sort());
 
-      // 继承投影相等:Monster→Avatar + EliteMonster→TrainingMonster(双文本形态)
+      // Inheritance projection: the Rust engine only emits edges for entities
+      // registered in entities.xml (Monster/EliteMonster); the 2026-11-28
+      // demo-def batch added Equipment/Talisman -> Item, which the TS graph
+      // sees across all .def files. Assert the Rust subset with the same
+      // shape, and the TS superset it derives from the full corpus.
       const rustInheritance = rust.edges
         .filter(e => e.kind === 'inheritance')
         .map(e => `${e.from}->${e.to}`)
         .sort();
-      expect(rustInheritance).toEqual(['def:EliteMonster->def:TrainingMonster', 'def:Monster->def:Avatar']);
+      expect(rustInheritance).toEqual([
+        'def:EliteMonster->def:TrainingMonster',
+        'def:Monster->def:Avatar'
+      ]);
       const tsInheritance = tsGraph.edges
         .filter(e => e.type === 'inheritance')
         .map(e => `${e.from}->${e.to}`)
         .sort();
-      expect(tsInheritance).toEqual(['EliteMonster->TrainingMonster', 'Monster->Avatar']);
+      expect(tsInheritance).toEqual([
+        'EliteMonster->TrainingMonster',
+        'Equipment->Item',
+        'Monster->Avatar',
+        'Talisman->Item'
+      ]);
 
       // TS 旧视图在此 fixture 上只看到继承(规范 <of>/Interfaces/Components 全丢)
       expect(tsGraph.edges.filter(e => e.type !== 'inheritance')).toEqual([]);

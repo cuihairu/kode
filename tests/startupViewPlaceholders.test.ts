@@ -22,6 +22,9 @@ const declaredViewIds: string[] = Object.values(
   (packageJson as unknown as DeclaredPackageJson).contributes.views
 )
   .flat()
+  // Webview containers are registered through registerWebviewViewProvider,
+  // never as tree data providers; only tree views enter the placeholder ledger.
+  .filter(view => (view as { type?: string }).type !== 'webview')
   .map(view => view.id)
   .sort();
 
@@ -113,7 +116,11 @@ describe('KODE-PERF 视图先行:侧栏视图占位注册', () => {
         countByView.set(entry.viewId, (countByView.get(entry.viewId) ?? 0) + 1);
       }
       for (const viewId of declaredViewIds) {
-        expect(countByView.get(viewId), `${viewId} 占位+接管两笔`).toBe(2);
+        // The diagnostics tools view real provider is gated on the sidebar
+        // (supportsDiagnosticsSidebar), false in this fake host; placeholder
+        // is still mandatory so the host never reports a missing provider.
+        const expected = viewId === 'kbengine.diagnosticsTools' ? 1 : 2;
+        expect(countByView.get(viewId), `${viewId} registration count`).toBe(expected);
       }
     } finally {
       disposeAll(context);

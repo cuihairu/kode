@@ -136,17 +136,23 @@ describe('extension activate 装配', () => {
     expect(testsRegistry.controllers[0].profiles[0].kind).toBe(1);
     expect(testsRegistry.controllers[0].profiles[0].isDefault).toBe(true);
 
-    // 树视图(KODE-PERF 视图先行 + KB-GC-001 期二口径):activate 首行为全部
-    // 声明 id 注册空占位 provider,真 provider 在各自装配位随后接管=同 id
-    // 双注册是既定语义(宿主同 id 后到者接管)。锁两面:前 N 笔(占位批)与
-    // 后 N 笔(真接管批)都与 views 贡献点严格一致。
+    // Tree views only (KODE-PERF placeholder-first + KB-GC-001 phase two):
+    // activate registers empty placeholders for every tree view declared in
+    // package.json, then the real providers take over under the same id.
+    // Webview containers use registerWebviewViewProvider and never enter the
+    // tree registration ledger.
     const declaredViewIds = Object.values(declared.views)
       .flat()
+      .filter((view: { id: string; type?: string }) => view.type !== 'webview')
       .map(view => view.id)
       .sort();
     const registeredViewIds = treeRegistrations.map(item => item.viewId);
     expect(registeredViewIds.slice(0, declaredViewIds.length).sort()).toEqual(declaredViewIds);
-    expect(registeredViewIds.slice(declaredViewIds.length).sort()).toEqual(declaredViewIds);
+    // Takeover batch: the diagnostics tools view real registration is gated
+    // on the diagnostics sidebar (supportsDiagnosticsSidebar, VS Code >=
+    // 1.106), which is false in this fake host -- placeholder-only there.
+    const takeoverExpected = declaredViewIds.filter(id => id !== 'kbengine.diagnosticsTools');
+    expect(registeredViewIds.slice(declaredViewIds.length).sort()).toEqual(takeoverExpected);
 
     // 语言服务:补全 4(.def + Python + 启动脚本,KBEXP-1 + 配置 XML,KSEM-CFG-04)
     // + alias.xml 编辑辅助再一份(KODE-SYN-003:别名类型补全)、

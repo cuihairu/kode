@@ -163,9 +163,12 @@ const wordPosition = (content: string, marker: string, symbol: string): Position
   }, 60_000);
 
   it('⑤ types.xml 声明词 → 语料首个消费站点(RUST-137 批 4 反边,of 值位)', async () => {
+    // 2026-11-28 re-anchor: the demo corpus reshuffle moved the first
+    // ITEM_ID consumption site to Avatar.def (depot <Arg> position); the
+    // Inventory component no longer consumes it at an <of> position.
     await probeLanding(
       'scripts/entity_defs/types.xml', '<ITEM_ID>', 'ITEM_ID',
-      'scripts/entity_defs/components/Inventory.def', '<of> ITEM_ID');
+      'scripts/entity_defs/Avatar.def', '<Arg> ITEM_ID');
   }, 60_000);
 
   it('⑥ FIXED_DICT 声明词 → 消费站点 of 值位(Inventory.def Arg 位次之不选)', async () => {

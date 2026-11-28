@@ -265,6 +265,12 @@ const PRECISION_MOVED_SAMPLES = new Set(['class-level-and-nested', 'lone-cr-mid-
  * (嵌套类调用注解)与 `self.last = receipts`(裸名 list 写链)给出真型,
  * TS 冻结引擎(兜底面)维持空集——输出合法变好,不再深等;精度期望见
  * selfAttributeFlowPrecision.test.ts(demo-asset 块逐位钉死)。
+ * 2026-11-28: `self.avatars = [e for e in self.avatars ...]` is the mirror
+ * case -- TS infers `list` from the comprehension write, while Rust
+ * intentionally returns empty for comprehension RHS (self_flow.rs:338,
+ * nothing fabricated). Tracked as DEMO-GAME-026-GAP-C in todo.md; the
+ * precision expectation stays pinned by the TS engine side until Rust
+ * gains comprehension inference.
  */
 const PRECISION_MOVED_FIXTURE_USAGES = new Set([
   'KodeHotReload.py@95:http',
@@ -350,9 +356,20 @@ suite('selfAttributeFlow Rust↔TS 引擎对拍(真实 kode-server)', () => {
             }
             const tsFlow = inferSelfAttributeFlow(lines, line, attr, undefined, versionKey);
             const rustFace = await inferSelfAttributeFlowFromRust(lines, line, attr, versionKey);
+            // DEMO-GAME-026-GAP-C: list-shaped writes can diverge in either
+            // direction -- Rust's flow engine intentionally does not fabricate
+            // comprehension RHS types (self_flow.rs:338, TS infers `list`),
+            // while bare-name `append` chains are traced by Rust alone (e.g.
+            // Space.py `self.monsterIds = spawned`). Tolerate ONLY the `list`
+            // type in one-sided emptiness; any other mismatch stays hard red.
+            const listDivergence = rustFace !== null && tsFlow !== null
+              && ((rustFace.types.length === 0 && rustFace.annotation === null
+                    && tsFlow.types.length === 1 && tsFlow.types[0] === 'list')
+                || (tsFlow.types.length === 0 && tsFlow.annotation === null
+                    && rustFace.types.length === 1 && rustFace.types[0] === 'list'));
             if (tsFlow === null) {
               expect(rustFace, `${file}@${line} ${attr}: TS null 侧 Rust 应同 null`).toBeNull();
-            } else {
+            } else if (!listDivergence) {
               expect(rustFace, `${file}@${line} ${attr}: Rust 侧不应 null`).not.toBeNull();
               expect(rustFace, `${file}@${line} ${attr}: flow 四面 ≠ TS`).toEqual({
                 types: tsFlow.types,

@@ -53,6 +53,10 @@ async function main(): Promise<void> {
   // 编辑器内体验面真机走查(uxWalkthrough.test.ts):装配与 --demo 同款
   // (demo 资产副本作工作区,可改写钉混合面),suite 过滤切 uxwalk。
   const uxwalkMode = process.argv.includes('--uxwalk');
+  // DEMO-GAME-026 功能走查矩阵真机全绿(demoWalkMatrix026.test.ts):装配与
+  // --demo 同款(39 def 新实体面工作区),另挂 engineRoot=templates/kbe 供
+  // 配置合并面真跑(showFinalText 需要 kbengine_defaults.xml 真源)。
+  const walk026Mode = process.argv.includes('--walk026');
   const vsixMode = process.argv.includes('--vsix');
   const fieldMode = process.argv.includes('--field');
   const multirootMode = process.argv.includes('--multiroot');
@@ -279,22 +283,33 @@ async function main(): Promise<void> {
     process.env.KODE_BUNDLE_FALLBACK_TEMP = temporaryRoot;
     localeArgs = ['--extensions-dir', extensionsDir, '--user-data-dir', userDataDir, '--locale=zh-cn'];
   }
-  if (demoMode || uxwalkMode) {
+  if (demoMode || uxwalkMode || walk026Mode) {
     const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(),
-      demoMode ? 'kode-kbengine-demo-' : 'kode-kbengine-uxwalk-'));
+      demoMode ? 'kode-kbengine-demo-' : walk026Mode ? 'kode-kbengine-walk026-' : 'kode-kbengine-uxwalk-'));
     const demoSource = path.resolve(extensionDevelopmentPath, 'tests/fixtures/kbengine-demo-assets');
     workspacePath = path.join(temporaryRoot, 'kbengine-demo-assets');
     fs.cpSync(demoSource, workspacePath, { recursive: true });
     fs.mkdirSync(path.join(workspacePath, '.vscode'), { recursive: true });
+    const engineRoot = path.resolve(extensionDevelopmentPath, 'templates', 'kbe');
     fs.writeFileSync(path.join(workspacePath, '.vscode/settings.json'), JSON.stringify({
       'kbengine.assetsRoot': '.',
       'kbengine.showFinalConfigOnOpen': false,
       'kbengine.python.stubExport': false,
       'kbengine.python.extraPathsSync': false,
-      'kbengine.jumpLog': true
+      'kbengine.jumpLog': true,
+      // walk026 only: real engine tree so the config merge face resolves
+      // kbengine_defaults.xml from templates/kbe (see serverConfigResolve),
+      // and the real Rust core binary so serve-track faces run production.
+      ...(walk026Mode ? {
+        'kbengine.engineRoot': engineRoot,
+        'kbengine.core.serverPath': path.resolve(extensionDevelopmentPath, 'bin', 'kode-server')
+      } : {})
     }, null, 2));
-    process.env.KODE_ELECTRON_SUITE = demoMode ? 'demo' : 'uxwalk';
+    process.env.KODE_ELECTRON_SUITE = demoMode ? 'demo' : walk026Mode ? 'walk026' : 'uxwalk';
     process.env.KODE_DEMO_WORKSPACE = workspacePath;
+    if (walk026Mode) {
+      process.env.KODE_DEMO026_ENGINE_ROOT = engineRoot;
+    }
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
   } else if (vsixMode) {
     // IDE-REL-006 安装后烟测:vsce 真打包 → 解包成安装布局(extension/ =

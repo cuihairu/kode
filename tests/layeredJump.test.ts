@@ -258,7 +258,7 @@ describe('分层跳转(对象级放弃收窄)', () => {
       const objectHit = await manager.resolveMethodDefinitionForClass('Monster', 'onAggro');
       expect(objectHit, '对象级应命中').not.toBeNull();
       expect(normalize(objectHit!.defFile)).toContain('entity_defs/Monster.def');
-      expect(objectHit!.line).toBe(15);
+      expect(objectHit!.line).toBe(19);
       // 对象级属性:Avatar 的 skillSlots <Properties>
       const propertyHit = await manager.resolvePropertyDefinitionForClass('Avatar', 'skillSlots', 'skillSlots');
       expect(propertyHit, '对象级属性应命中').not.toBeNull();

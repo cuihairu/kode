@@ -1,17 +1,19 @@
 {
   "generator": "kode-server dump-diagnostic-layering-golden",
-  "fileCount": 6,
-  "findingCount": 8,
+  "fileCount": 7,
+  "findingCount": 9,
   "checkCounts": {
+    "heavy-sync-broadcast": 1,
     "missing-flags": 4,
     "redundant-detail-level": 1,
     "unknown-type-reference": 3
   },
   "layerCounts": {
-    "localSyntax": 5,
+    "localSyntax": 6,
     "semantic": 3
   },
   "layerForCheck": {
+    "heavy-sync-broadcast": "localSyntax",
     "missing-flags": "localSyntax",
     "redundant-detail-level": "localSyntax",
     "unknown-type-reference": "semantic"
@@ -25,8 +27,8 @@
   "replayStats": [
     {
       "layer": "localSyntax",
-      "requested": 5,
-      "published": 5,
+      "requested": 6,
+      "published": 6,
       "skippedCurrentVersion": 0
     },
     {
@@ -120,18 +122,32 @@
         {
           "check": "redundant-detail-level",
           "severity": "info",
-          "line": 54,
-          "offset": 1483,
+          "line": 59,
+          "offset": 1775,
           "length": 5,
           "message": "属性 sight 的 Flags 无客户端可见性,配置 <DetailLevel> 不产生任何效果(冗余字段)"
         },
         {
           "check": "unknown-type-reference",
           "severity": "error",
-          "line": 72,
-          "offset": 1856,
+          "line": 326,
+          "offset": 10184,
           "length": 9,
           "message": "自定义类型 Inventory 未在 types.xml 中注册，请先在 types.xml 注册后再引用"
+        }
+      ]
+    },
+    {
+      "file": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Formation.def",
+      "findingCount": 1,
+      "findings": [
+        {
+          "check": "heavy-sync-broadcast",
+          "severity": "warning",
+          "line": 9,
+          "offset": 288,
+          "length": 13,
+          "message": "属性 kind(STRING)以 ALL_CLIENTS 对全体客户端同步,大字段建议收窄旗标或改用 tag/DetailLevel 降低同步粒度"
         }
       ]
     },

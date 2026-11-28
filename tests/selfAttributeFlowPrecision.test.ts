@@ -234,3 +234,27 @@ suite('demo-asset:KodeHotReload.py in-file 调用注解与裸名写链(真实夹
     });
   });
 });
+
+// 2026-11-29:demo 资产 Space.py 的裸名写链精度位移(对拍深等面豁免走
+// selfAttributeFlowRustParity.test.ts 的 listDivergence 容差——单边空集且
+// 类型恰为 list 才放行,其余四面仍硬对等)。真实语料钉死 Rust 批 C 面:
+// `spawned = []` + `spawned.append(...)` 写链,TS 冻结引擎维持空集。
+suite('demo-asset:Space.py 裸名 list 写链(真实夹具)', () => {
+  it('self.monsterIds = spawned → list;写点与后续读点基线一致', async () => {
+    const text = readFileSync(
+      join(repoRoot, 'tests', 'fixtures', 'kbengine-demo-assets', 'scripts', 'cell', 'Space.py'),
+      'utf8'
+    );
+    const lines = text.split('\n');
+    await withRustGate(async () => {
+      // 写点(0 基行 56,`self.monsterIds = spawned`)→ 裸名写链给真型 list
+      const writeFace = await inferSelfAttributeFlowFromRust(lines, 56, 'monsterIds', 'precision:demo-monsterids');
+      expect(writeFace, 'monsterIds@56').not.toBeNull();
+      expect(writeFace?.types).toEqual(['list']);
+      expect(writeFace?.annotation).toBe('list');
+      // 读点(0 基行 65,`mid = self.monsterIds[idx] ...`)→ 基线仍 list
+      const readFace = await inferSelfAttributeFlowFromRust(lines, 65, 'monsterIds', 'precision:demo-monsterids');
+      expect(readFace?.types).toEqual(['list']);
+    });
+  });
+});

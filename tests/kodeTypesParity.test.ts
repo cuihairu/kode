@@ -377,7 +377,7 @@ const computeTypeSurface = (): ComputedSurface => {
         }
       }
     }
-    cycles.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+    cycles.sort((a, b) => codePointLess(JSON.stringify(a), JSON.stringify(b)));
     return cycles;
   };
 
@@ -396,14 +396,19 @@ const computeTypeSurface = (): ComputedSurface => {
             return { alias: 'alias', array: 'array', fixedDict: 'fixed_dict', entity: 'entity' }[node.kind];
           })()
     }));
+  // Golden dump sorts names with Rust's byte-order sort() (golden.rs
+  // alias_names.sort()/entity_names.sort()); localeCompare collates
+  // case-insensitively and diverges on mixed-case demo names
+  // (TRAINING_ACTOR/Talisman/Trade), so match byte order here.
+  const codePointLess = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
   const aliasChains = [...nodes.entries()]
     .filter(([, n]) => n.kind === 'alias')
     .map(([name]) => resolveAliasChain(name))
-    .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+    .sort((a, b) => codePointLess(a.name ?? '', b.name ?? ''));
   const inheritanceChains = [...nodes.entries()]
     .filter(([, n]) => n.kind === 'entity')
     .map(([name]) => resolveInheritance(name))
-    .sort((a, b) => (a.entity ?? '').localeCompare(b.entity ?? ''));
+    .sort((a, b) => codePointLess(a.entity ?? '', b.entity ?? ''));
 
   return {
     fileCount: corpus.length,

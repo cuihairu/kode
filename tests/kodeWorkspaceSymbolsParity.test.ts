@@ -593,7 +593,9 @@ describe('kode2 Phase2 WorkspaceSymbol 快速搜索对拍(Rust golden ↔ defPar
       hitTotal += recomputed.length;
     }
     expect(golden.hitCount).toBe(hitTotal);
-  });
+    // The full-probe recompute is corpus-bound O(probes * defs); the demo
+    // fixture growth (30 -> 39 def files) pushes it past the 5s default.
+  }, 60_000);
 
   it('护栏:落点在语料 + root 恒实体 + kind/段值域 + 负例真空 + 折叠真分布', () => {
     const sections = new Set(['BaseMethods', 'CellMethods', 'ClientMethods']);

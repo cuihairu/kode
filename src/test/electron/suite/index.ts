@@ -67,6 +67,8 @@ export function run(): Promise<void> {
                         ? file === 'hotReloadBurstUi.test.js'
                       : suite === 'uxwalk'
                         ? file === 'uxWalkthrough.test.js'
+                      : suite === 'walk026'
+                        ? file === 'demoWalkMatrix026.test.js'
                   : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');
   for (const file of files) {
     mocha.addFile(path.resolve(testsRoot, file));

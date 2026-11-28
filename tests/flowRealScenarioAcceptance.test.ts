@@ -231,13 +231,14 @@ describe('FLOW-021 真实业务流转(登录/入场/战斗,全部真实项目资
     expect(radarEdges.some(edge => edge.unresolvedReason?.code === 'unknown-receiver')).toBe(true);
   });
 
-  it('S2 雷达中继基座腿:onRadarPush → client.onMonsterNear 发送面连接;客户端实现缺口如实', () => {
+  it('S2 雷达中继基座腿:onRadarPush → client.onMonsterNear 发送面连接', () => {
     const result = walk('base', 'Avatar', 'onRadarPush');
-    expect(result.steps.map(step => step.kind)).toEqual(['local-frame', 'cross-process-send']);
+    // 2026-11-28: the demo client now declares onMonsterNear (bots batch), so
+    // the flow gains a third remote-exec step on the client side.
+    expect(result.steps.map(step => step.kind)).toEqual(['local-frame', 'cross-process-send', 'remote-exec']);
     expect(result.steps[1].role).toBe('client');
     expect(result.steps[1].label).toContain('onMonsterNear');
-    // 真实项目缺口:client/Avatar.py 无 onMonsterNear 实现 → 不虚构执行帧
-    expect(readScript('client', 'Avatar').includes('def onMonsterNear')).toBe(false);
+    expect(readScript('client', 'Avatar').includes('def onMonsterNear')).toBe(true);
     // def 侧声明真实存在(Avatar.def ClientMethods)
     const defDecl = resolveDefMethod('Avatar', 'ClientMethods', 'onMonsterNear');
     expect(defDecl?.defFile.endsWith('Avatar.def')).toBe(true);
