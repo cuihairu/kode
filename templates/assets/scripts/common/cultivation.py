@@ -255,3 +255,69 @@ def remove_stack(stacks, item_id, count):
         if left > 0:
             result.append({"itemId": cur_id, "count": left})
     return (result, removed)
+
+
+# ---- Equipment synthesis (DEMO-GAME-015/048) ----
+
+# ATTRS field order: maxHp, attack, defense, qi.
+ATTR_TYPE_MAXHP = 0
+ATTR_TYPE_ATTACK = 1
+ATTR_TYPE_DEFENSE = 2
+ATTR_TYPE_QI = 3
+
+# itemId -> catalog entry (forge table; names resolve client-side).
+EQUIP_CATALOG = {
+    101: {"slot": "weapon", "realmReq": 0,
+          "bonus": {"maxHp": 0, "attack": 10, "defense": 0, "qi": 0}},
+    102: {"slot": "armor", "realmReq": 0,
+          "bonus": {"maxHp": 50, "attack": 0, "defense": 5, "qi": 0}},
+    103: {"slot": "accessory", "realmReq": 2,
+          "bonus": {"maxHp": 20, "attack": 3, "defense": 2, "qi": 10}},
+}
+
+# Per strengthen level additive step (015).
+STRENGTHEN_STEP = {"maxHp": 20, "attack": 5, "defense": 3, "qi": 2}
+
+# Gem socket cap per equipment (048).
+GEM_SLOTS = 3
+
+# itemId -> gem entry (socket table; one bag unit per socket).
+GEM_CATALOG = {
+    50: {"level": 1, "attrType": ATTR_TYPE_ATTACK, "attrValue": 8},
+    51: {"level": 1, "attrType": ATTR_TYPE_MAXHP, "attrValue": 40},
+    52: {"level": 2, "attrType": ATTR_TYPE_DEFENSE, "attrValue": 6},
+}
+
+
+def empty_bonus():
+    # Zero ATTRS dict (shape of the FIXED_DICT property).
+    return {"maxHp": 0, "attack": 0, "defense": 0, "qi": 0}
+
+
+def add_bonus(base, extra):
+    # ATTRS + ATTRS (pure, returns a new dict).
+    keys = ("maxHp", "attack", "defense", "qi")
+    return {key: base.get(key, 0) + extra.get(key, 0) for key in keys}
+
+
+def strengthen_bonus(strengthen):
+    # ATTRS delta for a strengthen level (linear per STRENGTHEN_STEP).
+    return {key: STRENGTHEN_STEP[key] * strengthen
+            for key in ("maxHp", "attack", "defense", "qi")}
+
+
+def gem_bonus(gems):
+    # Sum GEM_INFO attrValue into ATTRS by attrType (048).
+    keys = ("maxHp", "attack", "defense", "qi")
+    total = empty_bonus()
+    for gem in gems:
+        idx = gem.get("attrType", ATTR_TYPE_MAXHP)
+        if 0 <= idx < len(keys):
+            total[keys[idx]] += gem.get("attrValue", 0)
+    return total
+
+
+def synthesize_bonus(base_bonus, strengthen, gems=()):
+    # Final ATTRS = catalog bonus + strengthen step + gem sum (015/048).
+    return add_bonus(add_bonus(dict(base_bonus), strengthen_bonus(strengthen)),
+                     gem_bonus(gems))

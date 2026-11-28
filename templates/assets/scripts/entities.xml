@@ -17,6 +17,9 @@
 	<!-- Item (DEMO-GAME-014): persistent base-only item carrier
 	     (depot storage / mail attachments). -->
 	<Item hasBase="true"></Item>
+	<!-- Equipment (DEMO-GAME-015/048): Parent=Item, wearable gear with
+	     strengthen level and gem sockets. -->
+	<Equipment hasBase="true"></Equipment>
 	<Trade hasBase="true"></Trade>
 	<Mall hasBase="true"></Mall>
 	<Party hasBase="true"></Party>

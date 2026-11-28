@@ -236,3 +236,150 @@ class Avatar(KBEngine.Proxy):
 			self.id, itemDbid, item.itemId, item.count, len(self.equipDepot))
 		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
+
+	def _findOwnedEquip(self, equipDbid):
+		"""本机找归属装备实体(demo 规模线性扫,同 reqDepotWithdraw)。"""
+		return next((e for e in KBEngine.entities.values()
+			if getattr(e, "dbid", 0) == equipDbid
+			and getattr(e, "ownerDbid", 0) == self.dbid
+			and getattr(e, "className", "") == "Equipment"), None)
+
+	def _recomputeAttrs(self, why):
+		"""
+		attrs 合成(DEMO-GAME-015/048):基础 catalog bonus+强化等+宝石和,
+		遍历穿戴位实体本地重算;真机锚打前后差值(015 锚=穿前后变化)。
+		"""
+		before = dict(self.attrs)
+		total = cultivation.empty_bonus()
+		for slot in self.equipSlots:
+			equip = self._findOwnedEquip(slot.get("dbid", 0))
+			if equip is None:
+				continue
+			total = cultivation.add_bonus(total, cultivation.synthesize_bonus(
+				equip.bonus, equip.strengthen, equip.gems))
+		self.attrs = total
+		msg = "Avatar[%i] ATTRS SYNTH (%s) maxHp %i->%i attack %i->%i defense %i->%i qi %i->%i" % (
+			self.id, why,
+			before.get("maxHp", 0), total["maxHp"], before.get("attack", 0), total["attack"],
+			before.get("defense", 0), total["defense"], before.get("qi", 0), total["qi"],
+		)
+		print("[demo-evidence] %s" % msg, flush=True)
+		evidenceLog(msg)
+
+	def reqForgeEquip(self, itemId, slot):
+		"""
+		Exposed.(DEMO-GAME-015 锻造:catalog 表→Equipment 实体→装备库名册)
+		itemId 走 cultivation.EQUIP_CATALOG;写库回调回填 dbid 入名册
+		(同 reqDepotDeposit 时序判例)。
+		"""
+		entry = cultivation.EQUIP_CATALOG.get(itemId)
+		if entry is None or entry["slot"] != slot:
+			DEBUG_MSG("Avatar[%i].reqForgeEquip: unknown itemId=%i slot=%s" % (self.id, itemId, slot))
+			return
+		def onSaved(success, equip):
+			if not success or equip is None:
+				ERROR_MSG("Avatar[%i].reqForgeEquip: writeToDB failed itemId=%i" % (self.id, itemId))
+				return
+			self.equipDepot.append({"dbid": equip.dbid, "strengthen": 0})
+			msg = "Avatar[%i] FORGE Equipment dbid=%i itemId=%i slot=%s -> depot=%i" % (
+				self.id, equip.dbid, itemId, slot, len(self.equipDepot))
+			print("[demo-evidence] %s" % msg, flush=True)
+			evidenceLog(msg)
+		equip = KBEngine.createEntityLocally("Equipment", {
+			"itemId": itemId,
+			"itemType": 2,
+			"count": 1,
+			"ownerDbid": self.dbid,
+			"slot": slot,
+			"realmReq": entry["realmReq"],
+			"bonus": dict(entry["bonus"]),
+		})
+		if equip is None:
+			ERROR_MSG("Avatar[%i].reqForgeEquip: create Equipment failed" % self.id)
+			return
+		equip.writeToDB(onSaved)
+
+	def reqEquipWear(self, equipDbid, slot):
+		"""
+		Exposed.(DEMO-GAME-015 穿戴:名册→穿戴位,slot+境界闸 can_equip)
+		"""
+		idx = next((i for i, s0 in enumerate(self.equipDepot)
+			if s0.get("dbid") == equipDbid), None)
+		if idx is None:
+			DEBUG_MSG("Avatar[%i].reqEquipWear: dbid=%i not in depot" % (self.id, equipDbid))
+			return
+		equip = self._findOwnedEquip(equipDbid)
+		if equip is None:
+			DEBUG_MSG("Avatar[%i].reqEquipWear: entity dbid=%i not local" % (self.id, equipDbid))
+			return
+		ok, reason = cultivation.can_equip(slot, equip.slot, self.realm, equip.realmReq)
+		if not ok:
+			DEBUG_MSG("Avatar[%i].reqEquipWear: refused (%s)" % (self.id, reason))
+			return
+		# 同位替换:旧件回库名册
+		cur = next((s0 for s0 in self.equipSlots
+			if self._findOwnedEquip(s0.get("dbid", 0)) is not None
+			and self._findOwnedEquip(s0.get("dbid", 0)).slot == slot), None)
+		if cur is not None:
+			self.equipSlots = [s0 for s0 in self.equipSlots if s0 is not cur]
+			self.equipDepot.append(cur)
+		self.equipDepot = [s0 for i, s0 in enumerate(self.equipDepot) if i != idx]
+		self.equipSlots.append({"dbid": equipDbid, "strengthen": equip.strengthen})
+		self._recomputeAttrs("wear %s dbid=%i" % (slot, equipDbid))
+
+	def _slotOf(self, slotEntry):
+		equip = self._findOwnedEquip(slotEntry.get("dbid", 0))
+		return equip.slot if equip is not None else ""
+
+	def reqEquipUnwear(self, slot):
+		"""
+		Exposed.(DEMO-GAME-015 脱卸:穿戴位→名册)
+		"""
+		target = None
+		for s0 in self.equipSlots:
+			equip = self._findOwnedEquip(s0.get("dbid", 0))
+			if equip is not None and equip.slot == slot:
+				target = s0
+				break
+		if target is None:
+			DEBUG_MSG("Avatar[%i].reqEquipUnwear: nothing in slot=%s" % (self.id, slot))
+			return
+		self.equipSlots = [s0 for s0 in self.equipSlots if s0 is not target]
+		self.equipDepot.append(target)
+		self._recomputeAttrs("unwear %s" % slot)
+
+	def reqSocketGem(self, equipDbid, gemItemId):
+		"""
+		Exposed.(DEMO-GAME-048 嵌宝石:袋扣一颗宝石→装备孔位)
+		"""
+		entry = cultivation.GEM_CATALOG.get(gemItemId)
+		if entry is None:
+			DEBUG_MSG("Avatar[%i].reqSocketGem: unknown gem itemId=%i" % (self.id, gemItemId))
+			return
+		merged, removed = cultivation.remove_stack(list(self.bag.items), gemItemId, 1)
+		if removed <= 0:
+			DEBUG_MSG("Avatar[%i].reqSocketGem: no gem itemId=%i in bag" % (self.id, gemItemId))
+			return
+		equip = self._findOwnedEquip(equipDbid)
+		if equip is None:
+			self.bag.items = cultivation.merge_stack(
+				list(self.bag.items), gemItemId, 1, DEMO_BAG_CAPACITY)[0]
+			return
+		equip.onSocketGem({
+			"gemId": gemItemId,
+			"level": entry["level"],
+			"attrType": entry["attrType"],
+			"attrValue": entry["attrValue"],
+		})
+		self.bag.items = merged
+		self._recomputeAttrs("socket gem %i" % gemItemId)
+
+	def reqUnsocketGem(self, equipDbid, gemIndex):
+		"""
+		Exposed.(DEMO-GAME-048 卸宝石)
+		"""
+		equip = self._findOwnedEquip(equipDbid)
+		if equip is None:
+			return
+		equip.onUnsocketGem(gemIndex)
+		self._recomputeAttrs("unsocket gem idx=%i" % gemIndex)

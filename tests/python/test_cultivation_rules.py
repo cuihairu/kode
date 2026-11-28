@@ -155,6 +155,39 @@ class CreationPropsTests(unittest.TestCase):
         self.assertEqual(set(roots), set(XX.ROOT_KEYS))
 
 
+class EquipSynthesisTests(unittest.TestCase):
+    # DEMO-GAME-015/048: attrs synthesis = catalog bonus + strengthen
+    # step + gem sum; gates and tables stay server-authoritative.
+    def test_strengthen_linear(self):
+        b = XX.strengthen_bonus(2)
+        self.assertEqual(b, {"maxHp": 40, "attack": 10, "defense": 6, "qi": 4})
+        self.assertEqual(XX.strengthen_bonus(0), XX.empty_bonus())
+
+    def test_gem_bonus_by_attr_type(self):
+        gems = [{"attrType": XX.ATTR_TYPE_ATTACK, "attrValue": 8},
+                {"attrType": XX.ATTR_TYPE_MAXHP, "attrValue": 40},
+                {"attrType": 9, "attrValue": 999}]
+        b = XX.gem_bonus(gems)
+        self.assertEqual(b["attack"], 8)
+        self.assertEqual(b["maxHp"], 40)
+        self.assertEqual(b["defense"], 0)  # out-of-range attrType ignored
+
+    def test_synthesize_composite(self):
+        base = XX.EQUIP_CATALOG[101]["bonus"]
+        gems = [{"attrType": XX.ATTR_TYPE_ATTACK, "attrValue": 8}]
+        b = XX.synthesize_bonus(base, 2, gems)
+        self.assertEqual(b, {"maxHp": 40, "attack": 28, "defense": 6, "qi": 4})
+
+    def test_catalog_shapes(self):
+        for item_id, entry in XX.EQUIP_CATALOG.items():
+            self.assertIn(entry["slot"], XX.EQUIP_SLOTS)
+            self.assertGreaterEqual(entry["realmReq"], 0)
+            self.assertEqual(set(entry["bonus"]), {"maxHp", "attack", "defense", "qi"})
+        for entry in XX.GEM_CATALOG.values():
+            self.assertTrue(0 <= entry["attrType"] <= 3)
+            self.assertGreater(entry["attrValue"], 0)
+
+
 class RemoveStackTests(unittest.TestCase):
     # DEMO-GAME-014: mirror of merge_stack for outgoing flows (depot
     # deposit, mail attachments, trade offers).

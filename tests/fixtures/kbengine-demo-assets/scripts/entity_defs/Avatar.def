@@ -278,6 +278,16 @@
 			<Default> 1 </Default>
 			<Persistent> true </Persistent>
 		</race>
+		<!-- Worn equipment (DEMO-GAME-015): EQUIP_SLOT.dbid = Equipment
+		     entity dbid, strengthen mirrors the entity for client sync. -->
+		<equipSlots>
+			<Type>
+				ARRAY
+				<of> EQUIP_SLOT </of>
+			</Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Persistent> true </Persistent>
+		</equipSlots>
 	</Properties>
 
 	<!-- 组件声明:引擎 loadComponents 逐条装载,组件 def 在 components/ 子目录 -->
@@ -582,6 +592,35 @@
 			<Exposed> true </Exposed>
 			<Arg> UINT64 </Arg>
 		</reqDepotWithdraw>
+		<!-- Equipment (DEMO-GAME-015): forge from the catalog into the
+		     depot roster, wear from roster (slot + realm gate), unwear
+		     back to the depot roster. -->
+		<reqForgeEquip>
+			<Exposed> true </Exposed>
+			<Arg> UINT16 </Arg>
+			<Arg> STRING </Arg>
+		</reqForgeEquip>
+		<reqEquipWear>
+			<Exposed> true </Exposed>
+			<Arg> UINT64 </Arg>
+			<Arg> STRING </Arg>
+		</reqEquipWear>
+		<reqEquipUnwear>
+			<Exposed> true </Exposed>
+			<Arg> STRING </Arg>
+		</reqEquipUnwear>
+		<!-- Gems (DEMO-GAME-048): socket consumes one bag gem item;
+		     unsocket frees the socket (gem voided at demo scale). -->
+		<reqSocketGem>
+			<Exposed> true </Exposed>
+			<Arg> UINT64 </Arg>
+			<Arg> UINT16 </Arg>
+		</reqSocketGem>
+		<reqUnsocketGem>
+			<Exposed> true </Exposed>
+			<Arg> UINT64 </Arg>
+			<Arg> UINT8 </Arg>
+		</reqUnsocketGem>
 		<!-- Bounty board (DEMO-GAME-061): post (desc + reward escrow on
 		     base), accept, turn in for the reward. -->
 		<reqPostBounty>
