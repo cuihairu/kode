@@ -3203,3 +3203,42 @@ MCP 面此前只有「二进制在位」三可见态(已构建/未构建/已关�
 ## 2026-11-27 base↔cell 切换键同侧翻转(用户令:同侧键应切到另一侧,toggle)
 
 - [x] SWITCH-SAME-SIDE [P1] ctrl+alt+shift+b/c 在 base/cell 同名文件切换跳转时,若当前已就在按键指向的那一侧 → 翻到另一侧(用户 mid-turn 令,截断句经 AskUserQuestion 确认语义=同侧键切到另一侧;旧行为=弹「未找到同名 X 对应文件」不跳)。实现:纯核 switchTargetProcess(current,requested)(src/backend/processOwnershipLens.ts:160:同侧=翻 base/cell 对,client/bots 当前侧与跨侧按键保持原请求)+runSwitch 接线(languageProviders/processOwnership.ts,wanted 侧查找+缺位提示按翻转后的侧如实报)。语义后果(toggle 下成立,如实记):①同向连按 B,B=cell→base→cell(双击同键往返,toggle 本义);②「在途只认最新 B/C」的方向区分退化——从某一侧出发两键最终落点相同,latest-wins 钉子改为「入队续跳恰好执行一次且落翻转目标」(双开/零开仍红);③续跳 sourceFile 穿透钉子换形=续跳从 base 翻回 cell,误读陈旧编辑器仍红(判不出归属)。测试:纯核 2 例(tests/processOwnershipLens.test.ts switchTargetProcess describe)+命令面 3 例(tests/fileModifiedLens.test.ts 同侧双向翻转+缺位按翻转侧提示)+SWITCH-DEGRADE 竞态 3 例断言随新语义更新(tests/processOwnershipSwitchLens.test.ts,旧钉「同侧续跳报未找到」=翻转前语义)。文档:docs/guide/commands.md openCell/openBase 两节各补 Same-side flip 行(zh commands.md 本缺两命令节=既有落后面,不擅扩)。门禁:定向 3 文件 51/51 绿+tsc 0+eslint(触面)0;全量 vitest 13173 过/4 skip/1 红(tests/globalDataIndex.lifecycle.test.ts 大文件调度预算 475ms,与本批零文件交集;solo 3/3 绿=负载抖动族,非本批回归);守卫 load<45+5678 空。
+
+## 2026-11-28 修仙 MMO demo 战役(用户令:demo 完整化+当成正常游戏真测;游戏=修仙 MMO)
+
+需求总述(2026-11-28 用户逐条令):templates 改双根布局(assets=assetsRoot / kbe=engineRoot,已完成);游戏定位修仙 MMO——玩家修士(个人属性/境界/五灵根 金木水火土)、宗门、宠物、装备、物品、符箓、阵法;client 用 Godot 实现(用户令:只展示数值和对象,轻量面板);必须当成正常游戏真实创建+真机起服+真库跑通,不许再拿残缺 demo 假测(用户令原话「demo 不完整你也测不出问题」);覆盖面尽量铺满 KBEngine 用法与 kode 用法。纪律:全部真机验收(run-demo-engine.sh 真九进程+真 MariaDB),bots 先顶客户端,Godot 随后。
+
+- [ ] DEMO-GAME-007 [P1] 总纲:需求定稿+双覆盖矩阵(docs/design/xianxia-demo.md)——①游戏需求书(修士/宗门/宠物/装备/物品/符箓/阵法/Godot 面板,数值与规则)②KBEngine 特性覆盖矩阵(Proxy/Entity/cell-only/base-only 四实体形态、Parent 继承链、Interfaces、Components、FIXED_DICT/ARRAY 嵌套、implementedBy、别名链、Persistent/DatabaseLength/Index 索引、Flags 全谱、Exposed、DetailLevels/Volatile、writeToDB/loadFromDB 往返、account_system、bots、kbcmd、多空间副本位、globalData 位)③kode 功能走查矩阵(def↔py 跳转/父类链 MRO/读写引用分组/dict.get/FIXED_DICT 内联/配置合并 defaults/createNamespace 向导/热更面板/数据库导出/dbid 查询/base↔cell 切换/实体 API params 检查/entities.xml 审计/.def 格式化);后续每条对矩阵打勾,矩阵未覆盖项持续补条
+- [ ] DEMO-GAME-008 [P1] xianxia.py 纯函数核(common/,零引擎 import python3 直跑):境界表(练气/筑基/金丹/元婴/化神+经验曲线)、五灵根定义(金木水火土)、五行相生相克(金生水生木生火生土生金;金克木克土克水克火克金)亲和乘数、灵根随机 roll(建角用)、堆叠/穿戴/符箓消耗/阵法到期纯规则;tests/python 单测钉全规则
+- [ ] DEMO-GAME-009 [P2] DemoConsts 修仙扩展+建角接线:修仙战斗/宠物跟随/符箓/阵法/宗门常数;Account.reqCreateAvatar 建角随机 roll 五灵根注入 props(锚点:建角日志带灵根)
+- [ ] DEMO-GAME-010 [P1] types.xml 六新类型+结构门:SPIRIT_ROOTS(FIXED_DICT 五灵根)/ATTRS(个人属性 FIXED_DICT)/ITEM_INFO/EQUIP_SLOT/PET_INFO/MEMBER_INFO(FIXED_DICT 群)+ARRAY 组合;tests/typesXmlStructureCheck 绿;kode FIXED_DICT 内联面真料
+- [ ] DEMO-GAME-011 [P1] Avatar 修士属性面:def 增 attrs/spiritRoots/realm(境界)/experience 转 Persistent;base reqPractice 修炼(experience+→境界突破,复用 cellAddExperience 面)+onRealmUp/onSpiritRoots 通知;全部 Persistent 落 tbl_Avatar 真列
+- [ ] DEMO-GAME-012 [P1] 五行亲和战斗:攻守双方 spiritRoot 进 xianxia.affinity 乘数(相生 1.2/相克 1.5/被克 0.8 之类,数值 008 定),接入 cell/Avatar._attack 与 monster_ai 出手路径;纯函数已在 008 测,真机锚伤害值带乘数日志
+- [ ] DEMO-GAME-013 [P1] Inventory 储物袋升级:items ARRAY<ITEM_ID>→ARRAY<ITEM_INFO{itemId,count}> 堆叠合并;def/components+cell/Inventory.py+gold 灵石;DB 子表列变化靠起服 DB_RESET;杀怪掉灵石+物品入袋真机锚
+- [ ] DEMO-GAME-014 [P1] Item 物品实体(base-only 持久化,第四种实体形态):名称/类型/堆叠/归属;Monster 死亡掉落→世界 Item 实体 or 直接入袋(裁明选直接入袋+Item 实体承载仓库/邮件附件位,避免 cell 拾取面膨胀);writeToDB 真表 tbl_Item
+- [ ] DEMO-GAME-015 [P1] Equipment 装备(Parent=Item,脚本继承镜像 Monster(Avatar) 惯例):装备位 slot/强化等级 strengthen/属性加成 bonus(ATTRS);穿戴=equipSlots 登记+基座 attrs 合成生效;脱卸/替换;真机锚穿前后伤害变化
+- [ ] DEMO-GAME-016 [P1] Talisman 符箓(Parent=Item):效果类型/威力/次数 charges;reqUseTalisman 基座→cell AOE(复用 receiveDamage 路径)范围伤害妖兽,次数耗尽自毁(writeToDB 后 deleteFromDB 位);真机锚范围怪集体掉血
+- [ ] DEMO-GAME-017 [P1] Pet 灵宠(base+cell,无 client):召唤 createEntityLocally→createCellEntity 入空间;跟随(定时贴身 owner)/协战(复用 monster_ai 态势面裁简版);Avatar.petList ARRAY<PET_INFO> 名册持久化;真机锚宠物跟随位移+协战伤害
+- [ ] DEMO-GAME-018 [P1] Formation 阵法(base+cell):reqPlaceFormation 空间放置(复用 Space 建坑位延迟 timer 惯例避嵌套创建段错误坑)/范围效果(回血环 or 减速,数值 008 定)/duration 到期自毁;真机锚阵法圈内 buff 生效+到期消失
+- [ ] DEMO-GAME-019 [P1] Sect 宗门(base-only 持久化):reqCreateSect(宗名唯一)/reqJoinSect/reqLeaveSect/成员名册 members ARRAY<MEMBER_INFO> 子表真表 tbl_Sect+tbl_Sect_members;Avatar.sectId/sectName 同步;宗门频道广播位(ALL_CLIENTS 面);真机锚建宗/入宗/名册落库
+- [ ] DEMO-GAME-020 [P1] KBEngine 特性覆盖补全批(对 007 矩阵查漏):Index 索引列(accountName 上 Index)/Volatile 回调位/OWN_CLIENT flag 至少一例/ALL_CLIENTS 广播已有(onLevelUp)核验/多空间副本扩展位(宗门地图 spaceIndex 预留)/globalData 跨进程位(宗门名全服唯一用 globalData 试);矩阵逐项打勾,缺哪补哪
+- [ ] DEMO-GAME-021 [P2] 模板工程面:res/spaces+res/server/log4cxx_properties+scripts/data+scripts/server_common 占位目录(sdk 模板惯例)+README(修仙 demo 建游指南:MySQL 建库/起服/bots/Godot 连接/kode 走查入口)
+- [ ] DEMO-GAME-022 [P1] 真机起服全量验收:run-demo-engine.sh KBE_DEMO_ASSETS=templates/assets(已改名)起真九进程;锚=Spaces created/Space cell established/spawn done 8 怪/Avatar onEnterSpace/杀怪奖励;新实体全部真表落库(tbl_Pet/tbl_Item/tbl_Equipment/tbl_Talisman/tbl_Formation/tbl_Sect+Avatar 新列/子表);证据落 docs/acceptance-evidence/
+- [ ] DEMO-GAME-023 [P1] bots 全回路扩展(「当成正常游戏」无头验收):登录→建角(灵根)→进世界→杀怪→修炼升级(境界)→捡物穿戴(装备)→用符箓(AOE)→召宠协战→布阵→建宗入宗;每回路一条 demo-evidence 锚;run-demo-engine.sh bots 一键全跑绿
+- [ ] DEMO-GAME-024 [P1] DB 持久化往返验收:kill 引擎→重启→writeToDB/readFromDB 往返(修士属性境界灵根/宠物名册/宗门名册/装备强化 全部还在);dbmgr 建表列型与 def 对拍(实体表命名 tbl_<Entity> 前缀真相存档,SEM-016 旁证)
+- [ ] DEMO-GAME-025 [P1] kode 导出链真机验收(SEM-016 面,用户报障自证):materialize 真工程+engineRoot=templates/kbe+真库连接→导出用户数据/dbid 查询真跑;缺表行为如实记(kode 静默排除 vs 用户报「找不到 t_account」出处考古);t_account 字面全仓零产出结论真机复核
+- [ ] DEMO-GAME-026 [P2] kode 功能走查矩阵真机全绿(对 007 矩阵③逐项):新实体面上人工走查 def↔py 跳转/父类链 MRO(Pet/Equipment/Talisman/Formation 新链)/读写引用/dict.get/FIXED_DICT 内联(SPIRIT_ROOTS 等)/配置合并(kbengine.xml 覆盖 defaults)/createNamespace 向导/热更面板/base↔cell 切换/实体 API params 检查(createEntity 新类型)/entities.xml 审计;缺口登记新 todo
+- [ ] DEMO-GAME-027 [P2] Godot 客户端骨架:GDScript TCP 最小协议链(loginapp hello/register/login→onLoginResp→baseapp redirect→entity def 导入→createAvatar→onEnterWorld 视图);工程落 templates/godot-client(不进 VSIX);先 bots 同回路对拍
+- [ ] DEMO-GAME-028 [P2] Godot 数值面板(用户令:展示数值):HP/境界/经验/五灵根/灵石/背包物品/宠物名册/宗门信息 Label 面板;数据源=属性同步+ClientMethods 推送
+- [ ] DEMO-GAME-029 [P2] Godot 对象展示(用户令:展示对象):空间实体清单(Avatar/Monster/Pet/Formation)+位置标记(2D 俯视图坐标映射);AOI 视野内实体增删
+- [ ] DEMO-GAME-030 [P2] linux 引擎二进制分发定案:strip(单二进制 45-113M→27-29M 全低于 GitHub 100M 文件闸)+放置(templates/kbe 源树已入仓且 .vscodeignore 已排 VSIX;二进制走 nightly 产物面不入 git,fetch 脚本+run-demo-engine.sh KBE_ROOT 对接);真机 run 已用 ~/workspaces/kbengine 现成二进制先跑通
+- [ ] DEMO-GAME-031 [P2] windows 引擎二进制编译+分发:imac/CI 编译 win32 版(源=templates/kbe 同源);产物与 linux 同 nightly 面;run-demo-engine.sh windows 腿适配
+- [ ] DEMO-GAME-032 [P2] 文档站 demo 游戏专区:docs 站(VitePress)新增 demo 游戏独立文档目录+顶部 nav tab+sidebar(用户令 2026-11-28「单独的文档目录和tab」);双语言 en/zh 锁步(i18n 走 VitePress 官方 locale 机制,禁自造轮子);内容=游戏介绍(修仙 MMO 定位)/建游指南(MySQL/起服/bots/Godot)/实体模型(修士·五灵根·宗门·宠物·装备·物品·符箓·阵法)/KBEngine 特性覆盖矩阵/kode 走查矩阵/验收证据链接
+- [ ] DEMO-GAME-033 [P1] 宗门职位/权限/部门(2026-11-28 用户令「宗门有不同的职位,不同的权限,不同的部门」):职位表(宗主/长老/内门/外门/记名,xianxia.py 纯函数)+权限矩阵(邀请/踢人/晋升/发任务/开宗门图,按职位判权)+部门(战斗堂/丹药堂/任务堂,堂主=长老兼任);MEMBER_INFO 扩 rank/dept 字段;Sect 方法 promote/demote/kick/invite 按权限矩阵判权(纯函数已测,真机锚无权者被拒)
+- [ ] DEMO-GAME-034 [P1] 任务系统(2026-11-28 用户令「有接任务系统」):Task 实体(base 持久化,任务定义/接取/进度/交付/奖励)+宗门任务榜(Sect 发任务,成员接)+个人任务列表;交付回 Inventory/经验面;真机锚接→做→交全回路+奖励到账
+- [ ] DEMO-GAME-035 [P1] NPC(2026-11-28 用户令「有NPC」):Npc 实体(cell-only 或 base+cell,空间驻留不主动攻击);对话/发布任务(宗门任务堂 NPC+世界任务 NPC);交互走 Exposed 方法面;真机锚 NPC 对话+发任务
+- [ ] DEMO-GAME-036 [P1] 跨服玩法(2026-11-28 用户令「必须有一种跨服玩法」):KBEngine 跨服机制考证(源码面:多服务组/space 复制/globalData 跨组/双服实例共享 MySQL 哪条真通)→ demo 落地一种(候选:跨服演武场=双服务组玩家进同一空间竞技,或跨服 Boss);双服务组真机起服验收(run-demo-engine.sh 扩双组);矩阵补 KBEngine 跨服覆盖项
+- [ ] DEMO-GAME-037 [P1] 邮件系统(2026-11-28 用户令「必须有邮件系统」):Mail 实体(base-only 持久化,发件人/收件人/标题/正文/附件 ARRAY<ITEM_INFO> 子表)+登录收信(Avatar 登录拉取未读)/附件领取进容器/删除;真机锚发件→收件→领附件全回路+tbl_Mail 真表
+- [ ] DEMO-GAME-038 [P1] 容器物品族(2026-11-28 用户令「背包系统就是有空间能力的物品」):储物袋 StorageBag/收纳戒 SpatialRing/储物空间 StorageSpace 三档容器=物品(Parent=Item)+capacity+contents ARRAY<ITEM_INFO> 嵌套子表面;存取走容器实体(writeToDB 持久化到各自真表);Avatar 侧容器栏;真机锚三档容量上限差异+容器内物品重启仍在
+
+已完成本日前置(载体 01c8dd7a):templates/demo-game→templates/assets 改名(全部引用收编,vitest 67/67+python 3 门绿);templates/kbe 引擎源树入仓(137M,排除 .a/.o 构建产物,.vscodeignore 排 VSIX)。
