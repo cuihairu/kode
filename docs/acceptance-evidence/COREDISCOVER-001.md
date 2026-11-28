@@ -55,8 +55,24 @@ Phase D 零 spawn+ABSENT 完整性证成。
 操作者活动夺回,4 跑一致,状态栏灯面在帧内不可辨。依「真机边界如实记」判例:不以
 视觉帧充数,两态以 Phase D/R 程序证据承重,截图仅作现场存档。
 
-## 残留观察(不阻塞验收,记录在案)
+## 「面板后 client 消亡」残留观察——追证定谳为假象(2026-11-28 同日追证)
 
-- 打开 `kbengine.core.healthPanel` 之后 serve client 似被停止(runs 2+3 一致:
-  `procs-restored` 存活、驱动收尾收集时已消失;Index 通道无 exit/respawn 行)。
-  与 watcher 臂无关(showPanel 内 rerediscover+render 的行为面),留待后续批定点。
+初记:runs 2-4 一致观察到「开健康面板后 serve client 消亡且无 exit 行」,记为残留。
+instrumented 重跑(fix2-cdx.vsix:在 setConfig/handleExit 注入 console.error 取证)定谳:
+
+- 面板时点 rerediscover 的 setConfig **stop=false**(prev==next 同路径,renderer.log
+  `[cdx] setConfig stop=false ... at=Object.rerediscover`)——setConfig 停止臂排除;
+- renderer.log 全程零 `[cdx] handleExit`——client 未经历客户端侧退出事件;
+- 消亡实相=探针 run() 结束后 VS Code 测试宿主自行退出(extensionTestsPath 模式测试
+  完成即退)→ deactivate → `context.subscriptions` dispose → `gate.dispose` →
+  `stopClient`(kodeCoreGate.ts dispose 臂)→ shutdown 杀 server;驱动 procs.txt
+  采于退出之后,故只见操作者自有实例(10672);
+- Index 通道无 exit 行=窗口拆除时通道写入 flush 竞态,非无日志路径。
+
+结论:面板与 client 消亡无因果,时序相邻仅因面板是探针最后一步;COREDISCOVER-001
+验收结论不变。同批补上 setConfig 停止臂的观测缺口(indexLog
+`client stopped by setConfig` 过渡行+纯核钉)——此缺口(配置驱动停止在字段不可见)
+由本次取证实证。
+
+附判例:win32 取证时 exthost 内 `console.error` 落 **renderer.log**(非 exthost.log)。
+

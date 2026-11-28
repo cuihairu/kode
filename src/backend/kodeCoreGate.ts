@@ -392,6 +392,17 @@ export class KodeCoreGate {
     this.config = { ...config };
     const stillMirroring = this.shouldMirrorCorpus();
     if (!stillMirroring || previous.serverPath !== config.serverPath) {
+      // Field evidence (COREDISCOVER-001 win32 runs 2-4): a setConfig stop
+      // used to be invisible — collected logs could not tell a config-driven
+      // stop from any other client death. Name a real transition (path change,
+      // or stopping a live client); a degraded no-change setConfig fires on
+      // every panel/watch rerediscover and would only be noise.
+      if (previous.serverPath !== config.serverPath || this.client) {
+        indexLog(
+          'server',
+          `client stopped by setConfig (mirroring=${stillMirroring ? 'on' : 'off'}, serverPath ${JSON.stringify(previous.serverPath)} -> ${JSON.stringify(config.serverPath)})`
+        );
+      }
       this.stopClient();
     }
     if (this.mode === 'rust' && !this.config.serverPath) {

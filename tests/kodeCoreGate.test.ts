@@ -10,6 +10,7 @@ import {
   resolveBackendMode,
   type ShadowClientLike,
 } from '../src/backend/kodeCoreGate';
+import { clearIndexLogRecentLines, getIndexLogRecentLines } from '../src/backend/indexLog';
 import { KodeCoreClient } from '../src/backend/kodeCoreClient';
 import {
   awaitWithInteractiveBudget,
@@ -129,6 +130,21 @@ describe('语料镜像账与自动重启对账(E-2)', () => {
     const replayIndex = order.lastIndexOf('openDocument');
     const requestIndex = order.lastIndexOf('request:textDocument/diagnostic');
     expect(requestIndex).toBeGreaterThan(replayIndex);
+  });
+
+  it('setConfig stop on a live client names the transition on the index channel', async () => {
+    // COREDISCOVER-001 forensics (win32): a config-driven stop used to leave
+    // no index trace, so a field client death could not be attributed. The
+    // kill-switch stop (mirroring off, path unchanged) must carry the line.
+    const client = makeRestartableStubClient();
+    const gate = makeShadowGate(client);
+    await gate.mirrorDocument(URI, 'kbengine-def', 1, '<Entity/>');
+    clearIndexLogRecentLines();
+    gate.setConfig({ backend: 'ts', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+    const line = getIndexLogRecentLines().find(l => l.includes('client stopped by setConfig'));
+    expect(line).toBeTruthy();
+    expect(line).toContain('mirroring=off');
+    expect(line).toContain('"node:stub" -> "node:stub"');
   });
 
   it('kill-switch 离开后重进 shadow:账与快照都清,重开走 didOpen 而不是 didChange', async () => {

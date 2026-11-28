@@ -15,6 +15,7 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { clearIndexLogRecentLines, getIndexLogRecentLines } from '../src/backend/indexLog';
 import {
   CORE_BIN_REDISCOVER_DEBOUNCE_MS,
   registerCoreRediscoveryRefresh,
@@ -203,5 +204,23 @@ describe('KODE-COREDISCOVER-001 bin/ event-driven re-discovery', () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it('6. setConfig stop names the serverPath transition on the index channel', () => {
+    // Field evidence (COREDISCOVER-001 win32 runs 2-4): the serve client died
+    // on a panel-time setConfig with zero index lines — the trigger was not
+    // identifiable from collected logs. A config-driven stop must name the
+    // transition; a no-change setConfig must stay silent.
+    const gate = new KodeCoreGate();
+    setCore({ 'core.backend': 'rust' });
+    gate.setConfig({ backend: 'rust', serverPath: '', shadowTimeoutMs: 2000 });
+    clearIndexLogRecentLines();
+    gate.setConfig({ backend: 'rust', serverPath: '', shadowTimeoutMs: 2000 });
+    expect(getIndexLogRecentLines().some(l => l.includes('client stopped by setConfig'))).toBe(false);
+    gate.setConfig({ backend: 'rust', serverPath: 'C:/x/kode-server.exe', shadowTimeoutMs: 2000 });
+    const line = getIndexLogRecentLines().find(l => l.includes('client stopped by setConfig'));
+    expect(line).toBeTruthy();
+    expect(line).toContain('mirroring=on');
+    expect(line).toContain('"" -> "C:/x/kode-server.exe"');
   });
 });
