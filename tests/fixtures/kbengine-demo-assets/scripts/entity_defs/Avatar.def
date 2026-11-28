@@ -5,10 +5,15 @@
 	</Interfaces>
 
 	<Properties>
+		<!-- DEMO-GAME-020 Index face: name lookup column (def-level index).
+		     Account.accountName stays un-indexed on purpose: the engine
+		     account system owns tbl_Account.accountName, def-level index
+		     there risks a duplicate index at table creation. -->
 		<name>
 			<Type> STRING </Type>
 			<Flags> BASE_AND_CLIENT </Flags>
 			<Persistent> true </Persistent>
+			<Index> true </Index>
 			<DatabaseLength> 64 </DatabaseLength>
 		</name>
 		<level>
@@ -258,9 +263,11 @@
 			<Default> 0 </Default>
 			<Persistent> true </Persistent>
 		</firstRechargeDone>
+		<!-- DEMO-GAME-020 OWN_CLIENT face: card expiry is private to the
+		     owner's client (own-UI only). -->
 		<monthlyCardUntil>
 			<Type> UINT32 </Type>
-			<Flags> BASE </Flags>
+			<Flags> OWN_CLIENT </Flags>
 			<Default> 0 </Default>
 			<Persistent> true </Persistent>
 		</monthlyCardUntil>
@@ -787,4 +794,11 @@
 		</useTalismanBlast>
 	</CellMethods>
 
+	<!-- DEMO-GAME-020 Volatile face: position/yaw sync optimized
+	     (engine contract: empty child element = VolatileInfo::ALWAYS,
+	     entitydef.cpp loadVolatileInfo). -->
+	<Volatile>
+		<position/>
+		<yaw/>
+	</Volatile>
 </root>

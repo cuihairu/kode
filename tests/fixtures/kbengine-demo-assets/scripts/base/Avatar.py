@@ -170,6 +170,13 @@ class Avatar(KBEngine.Proxy):
 		if self._findSectByName(name) is not None:
 			DEBUG_MSG("Avatar[%i].reqCreateSect: name taken %s" % (self.id, name))
 			return
+		# DEMO-GAME-020 globalData face: cross-process unique-name registry
+		# (KBEngine.globalData is a dbmgr-synced map, globaldata_client.cpp
+		# broadcasts writes to every baseapp/cellapp).
+		sectKey = "sectname:" + name
+		if KBEngine.globalData.get(sectKey) is not None:
+			DEBUG_MSG("Avatar[%i].reqCreateSect: globalData name taken %s" % (self.id, name))
+			return
 		def onSaved(success, sect):
 			if not success or sect is None:
 				ERROR_MSG("Avatar[%i].reqCreateSect: writeToDB failed name=%s" % (self.id, name))
@@ -246,6 +253,12 @@ class Avatar(KBEngine.Proxy):
 		self.sectName = ""
 		if not len(sect.members):
 			sectName = sect.name
+			sectKey = "sectname:" + sectName
+			if KBEngine.globalData.get(sectKey) is not None:
+				del KBEngine.globalData[sectKey]
+				msg = "Avatar[%i] SECT GLOBALDATA RELEASE %s" % (self.id, sectKey)
+				print("[demo-evidence] %s" % msg, flush=True)
+				evidenceLog(msg)
 			sect.deleteFromDB()
 			sect.destroy()
 			msg = "Avatar[%i] SECT DISBAND dbid=%i name=%s (empty)" % (

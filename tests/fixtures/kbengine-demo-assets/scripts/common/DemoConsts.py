@@ -36,6 +36,10 @@ FORMATION_MAX_MEMBERS = 5          # max members sharing one formation
 FORMATION_RADIUS = 10.0            # members must stay within this radius of the anchor
 FORMATION_BUFF_RATIO = 0.1         # per-member damage buff ratio while in formation
 
+# Sect map space reservation (DEMO-GAME-020): sect instanced maps get
+# spaceIndex = SECT_SPACE_INDEX_BASE + sectDbid (created lazily on demand)
+SECT_SPACE_INDEX_BASE = 1000
+
 # Sect (DEMO-GAME-009/019/033)
 SECT_MAX_MEMBERS = 100             # roster cap of one sect
 SECT_CREATE_COST_GOLD = 500        # gold required to found a sect

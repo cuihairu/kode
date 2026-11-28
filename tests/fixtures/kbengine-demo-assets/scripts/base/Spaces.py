@@ -17,7 +17,9 @@ class Spaces(KBEngine.Entity):
 		msg = "Spaces[%i] created (baseapp)" % self.id
 		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
-		# 迷你 ARPG:单一世界空间(索引 1);多空间扩展时往这里加号即可
+		# 迷你 ARPG:单一世界空间(索引 1);多空间扩展时往这里加号即可。
+		# DEMO-GAME-020 副本扩展位:宗门地图按 spaceIndex=1000+sectDbid
+		# (SECT_SPACE_INDEX_BASE)惰性开辟,常驻世界空间不预建。
 		self.createSpace(1)
 		# 热更接收器心跳:空闲 baseapp 主循环握 GIL,HTTP 守护线程会饿死;
 		# 常驻实体计时器给主循环周期性 Python 窗口(契约见 KodeHotReload)
