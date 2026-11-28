@@ -26,7 +26,7 @@
 | 阵法 | 空间放置/范围效果/到期销毁 | `Formation`(base+cell) | 本战役 018 |
 | 宗门 | 创建/加入/退出/成员名册持久化 | `Sect`(base-only) | 本战役 019 |
 | 宗门组织 | 职位(宗主/长老/内门/外门)、权限矩阵、部门(战斗堂/丹药堂/任务堂) | MEMBER_INFO 扩 rank/dept+权限纯函数 | 本战役 033 |
-| 任务 | 接任务系统(任务定义/接取/进度/交付/奖励) | `Task` 实体+宗门任务榜 | 本战役 034 |
+| 任务 | 接任务系统(任务定义/接取/进度/交付/奖励),普通任务+宗门任务两类同面 | `Task` 实体+宗门任务榜 | 本战役 034 |
 | NPC | 空间驻留 NPC、对话、发布任务 | `Npc` 实体+Exposed 交互 | 本战役 035 |
 | 邮件 | 发件/收件/附件领取 | `Mail` 实体(base-only,附件 ARRAY 子表) | 本战役 037 |
 | 活动 | 活动开关/时间窗/奖励(双倍掉落/双倍经验)/公告广播 | `Activity` 常驻 base 实体 | 本战役 040 |
@@ -47,6 +47,8 @@
 | 修行流派 | 剑修/体修/魔修/阵法师/御兽师特点表+强化肉身(淬体) | path+bodyLevel+reqChoosePath/reqTemperBody | 本战役 055 |
 | 轮回 | 被击杀即死亡→进轮回流(确认→结算→计数→新身) | reincarnations 计数+onReincarnateStart+reqReincarnate | 本战役 056 |
 | 夺舍 | 魂迁入他人身体,可避轮回;原身死亡 | seizedByDbid+reqSeizeBody(CELL 闸)+onBodySeized/onSeizeResult | 本战役 057 |
+| 强化 | 装备强化等级成长(消耗+成功率) | reqStrengthenEquip+onStrengthenResult(EQUIP_SLOT.strengthen 既有字段) | 本战役 058 |
+| 排位赛 | 排位积分/段位/匹配进 arena 对战 | rankPoints+reqJoinRankedQueue/reqLeaveRankedQueue+onRankedMatchFound(spaceKind 2) | 本战役 059 |
 | 客户端 | Godot 实现,**只展示数值和对象**(轻量面板) | `templates/godot-client`(GDScript TCP) | 本战役 027-029 |
 | 无头验收 | bots 全回路(登录→建角→杀怪→修炼→穿戴→用符→召宠→布阵→入宗) | bots 脚本+demo-evidence 锚 | 本战役 023 |
 

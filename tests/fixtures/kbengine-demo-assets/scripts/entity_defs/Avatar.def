@@ -196,6 +196,15 @@
 			<Flags> BASE_AND_CLIENT </Flags>
 			<Default> 0 </Default>
 		</seizedByDbid>
+		<!-- Ranked PvP ladder (DEMO-GAME-059): points accumulate per
+		     match result; tier derives from points on the pure-function
+		     face; matches run in a ranked arena space (spaceKind = 2). -->
+		<rankPoints>
+			<Type> UINT32 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> 0 </Default>
+			<Persistent> true </Persistent>
+		</rankPoints>
 	</Properties>
 
 	<!-- 组件声明:引擎 loadComponents 逐条装载,组件 def 在 components/ 子目录 -->
@@ -304,6 +313,18 @@
 		<onSeizeResult>
 			<Arg> UINT8 </Arg>
 		</onSeizeResult>
+		<!-- Strengthening (DEMO-GAME-058): result push (1 = success,
+		     0 = failed) for the equipment the entry targeted; the new
+		     level syncs through the equip slots roster. -->
+		<onStrengthenResult>
+			<Arg> UINT8 </Arg>
+			<Arg> UINT64 </Arg>
+		</onStrengthenResult>
+		<!-- Ranked ladder (DEMO-GAME-059): match found — fight in the
+		     ranked arena space (spaceKind = 2); arg = arena space id. -->
+		<onRankedMatchFound>
+			<Arg> UINT32 </Arg>
+		</onRankedMatchFound>
 	</ClientMethods>
 
 	<BaseMethods>
@@ -448,6 +469,22 @@
 		<reqReincarnate>
 			<Exposed> true </Exposed>
 		</reqReincarnate>
+		<!-- Equipment strengthening (DEMO-GAME-058): equipDbid targets a
+		     worn/owned equipment; cost + success roll on base, the
+		     EQUIP_SLOT.strengthen field grows on success. -->
+		<reqStrengthenEquip>
+			<Exposed> true </Exposed>
+			<Arg> UINT64 </Arg>
+		</reqStrengthenEquip>
+		<!-- Ranked ladder (DEMO-GAME-059): join/leave matchmaking queue;
+		     pairing runs on the manager face (049 Party/Space kit
+		     provides the arena instance). -->
+		<reqJoinRankedQueue>
+			<Exposed> true </Exposed>
+		</reqJoinRankedQueue>
+		<reqLeaveRankedQueue>
+			<Exposed> true </Exposed>
+		</reqLeaveRankedQueue>
 	</BaseMethods>
 
 	<CellMethods>
