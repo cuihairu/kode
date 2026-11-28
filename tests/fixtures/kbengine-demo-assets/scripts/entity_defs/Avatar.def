@@ -249,6 +249,27 @@
 			<Flags> CELL_PUBLIC </Flags>
 			<Default> 0 </Default>
 		</dominantRoot>
+		<!-- Operations activities (DEMO-GAME-067): first-recharge claim
+		     flag, monthly-card expiry day (0 = none), VIP tier. Task-type
+		     activities ride the Task face, not properties. -->
+		<firstRechargeDone>
+			<Type> UINT8 </Type>
+			<Flags> BASE </Flags>
+			<Default> 0 </Default>
+			<Persistent> true </Persistent>
+		</firstRechargeDone>
+		<monthlyCardUntil>
+			<Type> UINT32 </Type>
+			<Flags> BASE </Flags>
+			<Default> 0 </Default>
+			<Persistent> true </Persistent>
+		</monthlyCardUntil>
+		<vipLevel>
+			<Type> UINT8 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> 0 </Default>
+			<Persistent> true </Persistent>
+		</vipLevel>
 	</Properties>
 
 	<!-- 组件声明:引擎 loadComponents 逐条装载,组件 def 在 components/ 子目录 -->
@@ -580,6 +601,18 @@
 		<reqSummonMerc>
 			<Exposed> true </Exposed>
 		</reqSummonMerc>
+		<!-- Operations activities (DEMO-GAME-067): one-time first
+		     recharge claim, monthly-card purchase (extends expiry by
+		     30 days), VIP reward claim (daily gift per tier). -->
+		<reqClaimFirstRecharge>
+			<Exposed> true </Exposed>
+		</reqClaimFirstRecharge>
+		<reqBuyMonthlyCard>
+			<Exposed> true </Exposed>
+		</reqBuyMonthlyCard>
+		<reqClaimVipReward>
+			<Exposed> true </Exposed>
+		</reqClaimVipReward>
 	</BaseMethods>
 
 	<CellMethods>

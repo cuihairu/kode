@@ -52,6 +52,11 @@
 | 装备库 | 纯装备寄存库(飞行器/技能/翅膀/宠物/图鉴/榜不入库) | equipDepot ARRAY<EQUIP_SLOT>+reqDepotDeposit/reqDepotWithdraw | 本战役 060 |
 | 悬赏 | 发布(托管奖励)/接单/完成拿奖励 | reqPostBounty/reqAcceptBounty/reqTurnInBounty+onBountyPosted/onBountyResult | 本战役 061 |
 | 佣兵 | 雇佣名册+召唤协战 | MERC_INFO/MERCS+mercList+hiredMercId+reqHireMerc/reqDismissMerc/reqSummonMerc | 本战役 062 |
+| 货运战争/护送 | 护送目标任务+途中可劫(货运战争) | Task 面(034)扩展+护送目标实体(随 035) | 本战役 063 |
+| 迷宫乱斗 | 迷宫空间混战+存活排名发奖 | Space 实例(spaceKind=3,复用 049 kit) | 本战役 064 |
+| 挑战玩法组 | 世界boss/遗迹/暗域/远征/试炼 | Space 实例 kit(spaceKind 4..7)+世界boss 伤害榜 | 本战役 065 |
+| 成就系统图 | 里程碑解锁+图鉴面,联动称号 | achList ARRAY<UINT16>+onAchievementUnlocked | 本战役 066 |
+| 运营活动组 | 首充/月卡/VIP;任务型活动走 Task 面 | firstRechargeDone/monthlyCardUntil/vipLevel+三领取入口 | 本战役 067 |
 | 客户端 | Godot 实现,**只展示数值和对象**(轻量面板) | `templates/godot-client`(GDScript TCP) | 本战役 027-029 |
 | 无头验收 | bots 全回路(登录→建角→杀怪→修炼→穿戴→用符→召宠→布阵→入宗) | bots 脚本+demo-evidence 锚 | 本战役 023 |
 
