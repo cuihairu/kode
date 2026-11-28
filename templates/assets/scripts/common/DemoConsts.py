@@ -48,3 +48,9 @@ DEMO_DROP_ITEM_COUNT = 1           # stack count added per kill
 
 # Talisman AOE (DEMO-GAME-016)
 DEMO_TALISMAN_RADIUS = 6.0        # blast radius around the caster
+
+# Pet follow / assist (DEMO-GAME-017)
+DEMO_PET_DAMAGE = 8           # pet assist hit damage (no wu xing multiplier)
+DEMO_PET_FOLLOW_DIST = 4.0    # start following when farther than this
+DEMO_PET_ASSIST_RANGE = 5.0   # pet picks owner-adjacent monsters within this
+DEMO_PET_VELOCITY = 5.0       # pet move velocity

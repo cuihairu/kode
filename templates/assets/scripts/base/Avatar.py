@@ -11,6 +11,7 @@ DEMO_SPACE_INDEX = 1
 
 # 迷你 ARPG 战斗常数:见 common/DemoConsts.py(base/cell 共用)
 from DemoConsts import DEMO_BAG_CAPACITY, DEMO_LEVEL_UP_STEP, DEMO_RESPAWN_DELAY, DEMO_TALISMAN_RADIUS
+from Spaces import spaceByIndex
 
 TIMER_RESPAWN = 1
 
@@ -419,3 +420,79 @@ class Avatar(KBEngine.Proxy):
 			evidenceLog(msg)
 		if self.cell is not None and power > 0:
 			self.cell.useTalismanBlast(int(DEMO_TALISMAN_RADIUS), power)
+
+	# ---- Pet (DEMO-GAME-017) ----
+
+	def reqAdoptPet(self, name):
+		"""
+		Exposed.(DEMO-GAME-017 收养:建 Pet 实体+写库+名册登记)
+		dbid 回调回填入册(同 Equipment/Item 时序判例)。
+		"""
+		def onSaved(success, pet):
+			if not success or pet is None:
+				ERROR_MSG("Avatar[%i].reqAdoptPet: writeToDB failed name=%s" % (self.id, name))
+				return
+			self.petList.append({"dbid": pet.dbid, "name": name, "realm": pet.realm})
+			msg = "Avatar[%i] ADOPT PET dbid=%i name=%s roster=%i" % (
+				self.id, pet.dbid, name, len(self.petList))
+			print("[demo-evidence] %s" % msg, flush=True)
+			evidenceLog(msg)
+		pet = KBEngine.createEntityLocally("Pet", {
+			"name": name,
+			"realm": 1,
+			"ownerDbid": self.dbid,
+		})
+		if pet is None:
+			ERROR_MSG("Avatar[%i].reqAdoptPet: create Pet failed" % self.id)
+			return
+		pet.writeToDB(onSaved)
+
+	def reqSummonPet(self, petDbid):
+		"""
+		Exposed.(DEMO-GAME-017 召唤:createEntityFromDB→cell 落身边)
+		"""
+		if next((p for p in self.petList if p.get("dbid") == petDbid), None) is None:
+			DEBUG_MSG("Avatar[%i].reqSummonPet: dbid=%i not in roster" % (self.id, petDbid))
+			return
+		space = spaceByIndex.get(DEMO_SPACE_INDEX)
+		if space is None or space.cell is None:
+			ERROR_MSG("Avatar[%i].reqSummonPet: space not ready" % self.id)
+			return
+
+		def summon(pet):
+			# ownerEntityId 是 CELL_PUBLIC:createCellEntity 前落 base 侧
+			# 即随 cellData 进 cell(dominantRoot 同款判例)。
+			pet.ownerEntityId = self.id
+			pet.createCellEntity(space.cell)
+			msg = "Avatar[%i] SUMMON PET dbid=%i name=%s -> cell space=%i" % (
+				self.id, petDbid, pet.name, DEMO_SPACE_INDEX)
+			print("[demo-evidence] %s" % msg, flush=True)
+			evidenceLog(msg)
+
+		loaded = next((e for e in KBEngine.entities.values()
+			if getattr(e, "className", "") == "Pet" and e.dbid == petDbid), None)
+		if loaded is not None:
+			summon(loaded)
+			return
+
+		def onLoaded(success, pet):
+			if not success or pet is None:
+				ERROR_MSG("Avatar[%i].reqSummonPet: load dbid=%i failed" % (self.id, petDbid))
+				return
+			summon(pet)
+		KBEngine.createEntityFromDB(petDbid, onLoaded)
+
+	def reqRecallPet(self):
+		"""
+		Exposed.(DEMO-GAME-017 收回:cell 销毁,base 留存待再召)
+		"""
+		pet = next((e for e in KBEngine.entities.values()
+			if getattr(e, "ownerEntityId", 0) == self.id
+			and getattr(e, "className", "") == "Pet"), None)
+		if pet is None or pet.cell is None:
+			DEBUG_MSG("Avatar[%i].reqRecallPet: no summoned pet" % self.id)
+			return
+		pet.destroyCellEntity()
+		msg = "Avatar[%i] RECALL PET dbid=%i name=%s" % (self.id, pet.dbid, pet.name)
+		print("[demo-evidence] %s" % msg, flush=True)
+		evidenceLog(msg)

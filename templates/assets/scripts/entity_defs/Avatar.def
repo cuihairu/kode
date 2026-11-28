@@ -288,6 +288,16 @@
 			<Flags> BASE_AND_CLIENT </Flags>
 			<Persistent> true </Persistent>
 		</equipSlots>
+		<!-- Pet roster (DEMO-GAME-017): PET_INFO{dbid,name,realm};
+		     dbid = Pet entity dbid for summon-from-DB. -->
+		<petList>
+			<Type>
+				ARRAY
+				<of> PET_INFO </of>
+			</Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Persistent> true </Persistent>
+		</petList>
 	</Properties>
 
 	<!-- 组件声明:引擎 loadComponents 逐条装载,组件 def 在 components/ 子目录 -->
@@ -627,6 +637,20 @@
 			<Exposed> true </Exposed>
 			<Arg> UINT64 </Arg>
 		</reqUseTalisman>
+		<!-- Pet (DEMO-GAME-017): adopt creates+persists a Pet, summon
+		     loads it from DB and drops its cell next to the avatar,
+		     recall removes the cell (base stays). -->
+		<reqAdoptPet>
+			<Exposed> true </Exposed>
+			<Arg> STRING </Arg>
+		</reqAdoptPet>
+		<reqSummonPet>
+			<Exposed> true </Exposed>
+			<Arg> UINT64 </Arg>
+		</reqSummonPet>
+		<reqRecallPet>
+			<Exposed> true </Exposed>
+		</reqRecallPet>
 		<!-- Bounty board (DEMO-GAME-061): post (desc + reward escrow on
 		     base), accept, turn in for the reward. -->
 		<reqPostBounty>

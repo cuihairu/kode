@@ -1,0 +1,31 @@
+<root>
+	<!-- Pet 宠物(DEMO-GAME-017):base+cell 双实体。名册持久化在
+	     Avatar.petList(PET_INFO),本实体承载召唤态:base 写库锚,
+	     cell 跟随+协战(pet_follow_point 纯函数核)。 -->
+	<Properties>
+		<name>
+			<Type> STRING </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Persistent> true </Persistent>
+			<DatabaseLength> 64 </DatabaseLength>
+		</name>
+		<realm>
+			<Type> UINT8 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> 1 </Default>
+			<Persistent> true </Persistent>
+		</realm>
+		<ownerDbid>
+			<Type> UINT64 </Type>
+			<Persistent> true </Persistent>
+			<Index> true </Index>
+		</ownerDbid>
+		<!-- Base sets before createCellEntity (cellData channel, same as
+		     Avatar.dominantRoot); the cell part reads it to find the owner. -->
+		<ownerEntityId>
+			<Type> UINT32 </Type>
+			<Flags> CELL_PUBLIC </Flags>
+			<Default> 0 </Default>
+		</ownerEntityId>
+	</Properties>
+</root>
