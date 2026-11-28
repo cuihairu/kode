@@ -239,6 +239,16 @@
 			<Flags> BASE_AND_CLIENT </Flags>
 			<Default> 0 </Default>
 		</hiredMercId>
+		<!-- Dominant spirit root (DEMO-GAME-012): cell-face bridge for
+		     the five-element damage multiplier; the base derives it from
+		     spiritRoots (BASE_AND_CLIENT, invisible on the cell face)
+		     and injects it through cellData right before
+		     createCellEntity. 0 = neutral (no root). -->
+		<dominantRoot>
+			<Type> UINT8 </Type>
+			<Flags> CELL_PUBLIC </Flags>
+			<Default> 0 </Default>
+		</dominantRoot>
 	</Properties>
 
 	<!-- 组件声明:引擎 loadComponents 逐条装载,组件 def 在 components/ 子目录 -->
