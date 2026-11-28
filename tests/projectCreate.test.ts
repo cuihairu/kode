@@ -281,7 +281,7 @@ describe('minimal project create flow (IDE-PRJ-008)', () => {
 });
 
 describe('demo game create flow (DEMO-GAME-006)', () => {
-  const TEMPLATE_ROOT = path.resolve(__dirname, '..', 'templates', 'demo-game');
+  const TEMPLATE_ROOT = path.resolve(__dirname, '..', 'templates', 'assets');
   // 独立窗口替身面(与最小项目组同一套键与恢复纪律,互不共享可变状态)
   const windowish = stubWindow as unknown as Record<string, unknown>;
   const originalWindow: Record<string, unknown> = {};

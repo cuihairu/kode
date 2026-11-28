@@ -33,7 +33,7 @@
 | 回执簇 | `src/backend/hotReloadReceipt.ts`、`hotReloadAppliedCheck.ts`、`hotReloadRetry.ts`（65 行）、`hotReloadRetryCommand.ts`（361 行）、`hotReloadRevisionEvidence.ts` + `Command.ts`、`hotReloadTargetState.ts`（401 行）、`hotReloadBatchSummary.ts` + `Command.ts` | accepted 回执解析器；applied 摘要双证据 + 10 秒沉降；重试规划 + 单目标重发命令；三类修订证据；双维度投递台账 + HOT-VER 版本册；按目标聚合 |
 | 状态/UI 簇 | `src/backend/hotReloadFileState.ts`（368 行）、`hotReloadFileStateFilter.ts`、`hotReloadFileVersion.ts`（303 行）、`src/hotReloadStatus.ts`（476 行）、`src/hotReloadToggle.ts`、`src/hotReloadFileDecorations.ts`、`src/hotReloadFileStateLens.ts`、`src/backend/hotReloadNotice.ts`、`src/backend/hotReloadGlobsMaterialize.ts`、`src/backend/hotReloadTempEdit.ts`、`src/backend/hotReloadDefGate.ts`、`hotReloadDefHash.ts`、`hotReloadDefStructure.ts` | 生命周期状态机；关注过滤/详情命令；按文件版本册；发送状态灯；开关；文件装饰；CodeLens；首跑通知；globs 物化；临时编辑热更；def 结构门；def 哈希三路径；def 结构分类器 |
 | Legacy 快速请求 | `src/backend/httpRequests.ts`、`src/backend/httpRequestService.ts`、`src/quickActions.ts`、`src/quickActionConfig.ts`、`src/quickActionTree.ts`、`src/variableSubstitution.ts`、`src/backend/debugJsonSchema.ts`、`src/debugConfigBootstrap.ts` | 语义不变；已迁至 `src/backend/`（SRC-001）；HTTP 注册现位 `src/activate/views.ts:233-303`（调用点 `src/extension.ts:1276-1277`） |
-| 接收侧（仓内，非扩展） | `templates/demo-game/scripts/common/KodeHotReload.py`（352 行）+ `xreload.py`（214 行，Python 3.7.3），镜像于 `tests/fixtures/kbengine-demo-assets/`；`scripts/hot-reload-receiver/referenceReceiver.mjs` | demo 回环桥：127.0.0.1 上 HTTP `/hotfix` `/reload` `/status`，端口 8090 base / 8091 cell；xreload = Guido van Rossum 算法适配 3.7.3；摘要校验 + applied 回执 |
+| 接收侧（仓内，非扩展） | `templates/assets/scripts/common/KodeHotReload.py`（352 行）+ `xreload.py`（214 行，Python 3.7.3），镜像于 `tests/fixtures/kbengine-demo-assets/`；`scripts/hot-reload-receiver/referenceReceiver.mjs` | demo 回环桥：127.0.0.1 上 HTTP `/hotfix` `/reload` `/status`，端口 8090 base / 8091 cell；xreload = Guido van Rossum 算法适配 3.7.3；摘要校验 + applied 回执 |
 
 ### HR-AUDIT-003 — 发送路径端到端链（现行发射路径）
 
@@ -99,7 +99,7 @@
 
 - **HTTP 回执契约（现已端到端实现）**：请求 = 通道体 JSON 对象（自动 `targetId` + `sender_digests`）；响应 = JSON（数组或对象），逐项 `file`（原样回声，必需）、`status` ∈ `accepted|applied|failed`（+`reason`）、可选 `targetId`（不匹配 → 拒收）、`digest`（applied 要求与冻结 sha256 相等）、`note`、`revision`（仅数字）。非 JSON → 全 `sent`。（`hotReloadTransport.ts:163-253`）
 - **官方通道回声契约**：telnet 控制台 exec 脚本带唯一标记 `KODE_RELOAD_<uuid>:`；载荷 `{files,targetId,sender_digests}`；引擎装有 `KodeHotReload` 时优先（`hotReloadTransport.ts:558-561`），回执经打印标记行返回，重走同一 HTTP 回执解析器（:582-590）；无观察者：Traceback → `failed`，否则 `sent`（「引擎无回执协议」）。
-- demo 接收器：`templates/demo-game/scripts/common/KodeHotReload.py`——HTTP 回环 `/hotfix` `/reload` `/status`，端口 8090 base / 8091 cell（env 可覆盖），校验 `sender_digests`，计算 sha256，回 `applied`，cell 文件 base→cell 下传；`xreload.py` = Guido van Rossum xreload 的 Python 3.7.3 适配。
+- demo 接收器：`templates/assets/scripts/common/KodeHotReload.py`——HTTP 回环 `/hotfix` `/reload` `/status`，端口 8090 base / 8091 cell（env 可覆盖），校验 `sender_digests`，计算 sha256，回 `applied`，cell 文件 base→cell 下传；`xreload.py` = Guido van Rossum xreload 的 Python 3.7.3 适配。
 - applied-revision 可查询性：**仍未实现**——无轮询/校验请求；`revision` 仅从回执解析（信息性）。
 - 目标进程识别：`targetId` 是通道附挂的标签（内建通道为 `'default'`，实例化通道另给），不是服务端发现的进程身份——真实部署如何映射：`unknown`。
 

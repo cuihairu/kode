@@ -4,12 +4,12 @@
 > only) on 2026-11-07 over the two script trees in this repository. **Scope is
 > honest**: these are the in-repo trees — the vendored demo assets fixture
 > (`tests/fixtures/kbengine-demo-assets`, 50 files) and the project template
-> (`templates/demo-game`, 27 files) — 77 files total, 0 parse errors. This is
+> (`templates/assets`, 27 files) — 77 files total, 0 parse errors. This is
 > **not** a real-project survey; widening to official sample projects and real
 > codebases is future work and will be recorded here when done.
 >
 > Regenerate: `python3 scripts/kbe-api-scan.py tests/fixtures/kbengine-demo-assets
-> templates/demo-game` (add `--json PATH` for machine-readable output).
+> templates/assets` (add `--json PATH` for machine-readable output).
 > Counts are attribute-access occurrences (reads + calls), deterministic
 > (sorted by count desc, then name).
 
@@ -99,7 +99,7 @@ Engine-known groups (counts = definitions across both trees):
 - **Timer discipline**: `addTimer` at 8 occurrences vs `onTimer` at 10
   definitions — trees consistently implement `onTimer(timerID, userArg)` and
   dispatch on the timer identity (`if userArg != TIMER_THINK: return`,
-  `templates/demo-game/scripts/cell/Monster.py:139-145`). Notably `delTimer`
+  `templates/assets/scripts/cell/Monster.py:139-145`). Notably `delTimer`
   is **never called** (0 occurrences)
   even though 8 timers are added: consistent with the lifecycle article
   (timers are cancelled wholesale on destroy — the `destroy()` macro calls

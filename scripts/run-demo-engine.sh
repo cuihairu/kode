@@ -13,7 +13,7 @@
 # 环境变量:
 #   KBE_ROOT        引擎仓根(默认 ~/workspaces/kbengine;二进制在 kbe/bin/server)
 #   KBE_DEMO_ASSETS 资产源目录(默认仓库夹具;DEMO-GAME-006 起可指
-#                   templates/demo-game 验证脚手架模板,布局同构)
+#                   templates/assets 验证脚手架模板,布局同构)
 #   KBE_DEMO_RUN    运行目录(默认 ~/.cache/kode-demo-engine-run)
 #   KBE_DEMO_DB     MySQL 主机(默认 192.168.5.5:3306,库 kode_demo)
 #   KBE_DEMO_NIC    引擎 internalInterface(默认本机 192.168.5.x 首地址)

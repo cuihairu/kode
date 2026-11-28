@@ -46,14 +46,14 @@ scripts/run-demo-engine.sh clean   # stop + 删运行目录
 环境变量与验收锚（起服后 grep 运行目录 logs/ 的关键行）见脚本头注释；
 逐批引擎证据在 `docs/acceptance-evidence/DEMO-GAME-00N.md`（起服表、
 spawn done、Avatar 进世界、击杀/升级/重生回路的原始日志节选）。
-`KBE_DEMO_ASSETS` 可指向 `templates/demo-game`（DEMO-GAME-006 从本夹具
+`KBE_DEMO_ASSETS` 可指向 `templates/assets`（DEMO-GAME-006 从本夹具
 派生的脚手架模板）验证模板布局同构。
 
 demo 模板（DEMO-GAME-006）
 --------
 
 扩展命令 `kbengine.project.createDemoGame`（或打开空目录时的提示）从
-`templates/demo-game` 物化一个 demo 游戏项目；模板内容 = 本夹具去掉训练场
+`templates/assets` 物化一个 demo 游戏项目；模板内容 = 本夹具去掉训练场
 （Training*/Elite*、common/training/）、README、`.vscode/` 与验收清单后的
 子集，排除账本见 `tests/demoGameTemplate.test.ts`。
 

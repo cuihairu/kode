@@ -321,7 +321,7 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
   );
   context.subscriptions.push(createProjectCommand);
 
-  // demo 游戏项目创建(DEMO-GAME-006):templates/demo-game(夹具游戏子集,
+  // demo 游戏项目创建(DEMO-GAME-006):templates/assets(夹具游戏子集,
   // Training/Elite 导航测试资产裁掉)磁盘装载,与最小项目同一保护面;
   // 空工程提示面(demoGameScaffoldPrompt)与命令面板都落在这条命令上
   const createDemoGameProjectCommand = vscode.commands.registerCommand(

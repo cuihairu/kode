@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-SPEC = importlib.util.spec_from_file_location('kode_xreload', str(ROOT / 'templates/demo-game/scripts/common/xreload.py'))
+SPEC = importlib.util.spec_from_file_location('kode_xreload', str(ROOT / 'templates/assets/scripts/common/xreload.py'))
 XR = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(XR)
 

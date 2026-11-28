@@ -14,7 +14,7 @@ Stdlib only; deterministic ordering everywhere (sorted keys, sorted files).
 
 Usage:
     python3 scripts/kbe-api-scan.py tests/fixtures/kbengine-demo-assets \
-        templates/demo-game --json docs/knowledge/api-usage-stats.json
+        templates/assets --json docs/knowledge/api-usage-stats.json
 """
 
 from __future__ import annotations

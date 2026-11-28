@@ -3,11 +3,11 @@
 > KB-001 桶 ③。由 `scripts/kbe-api-scan.py`(AST 解析,仅标准库)于
 > 2026-11-07 对本仓库两棵脚本树生成。**口径如实**:即仓库内树——演示资产
 > 夹具(`tests/fixtures/kbengine-demo-assets`,50 文件)与项目模板
-> (`templates/demo-game`,27 文件)——共 77 文件,0 解析错误。这**不是**
+> (`templates/assets`,27 文件)——共 77 文件,0 解析错误。这**不是**
 > 真实项目普查;扩大到官方示例项目与真实代码库属后续工作,做完才在此记录。
 >
 > 再生成:`python3 scripts/kbe-api-scan.py tests/fixtures/kbengine-demo-assets
-> templates/demo-game`(加 `--json PATH` 得机器可读输出)。计数口径=属性
+> templates/assets`(加 `--json PATH` 得机器可读输出)。计数口径=属性
 > 访问出现次数(读+调用),排序确定(计数降序,再按名)。
 
 ## 统计口径
@@ -91,7 +91,7 @@ interfaces 面的 `*Response` 函数)与 interfaces 面的描述符轮询对
 - **定时器纪律**:`addTimer` 8 处 vs `onTimer` 10 个定义——两树一致实现
   `onTimer(timerID, userArg)` 并按定时器身份分派
   (`if userArg != TIMER_THINK: return`,
-  `templates/demo-game/scripts/cell/Monster.py:139-145`)。值得注意
+  `templates/assets/scripts/cell/Monster.py:139-145`)。值得注意
   `delTimer` **从未被调用**(0 处),尽管加了 8 个定时器:与生命周期篇
   一致(销毁时定时器整批取消——`destroy()` 宏调
   `scriptTimers_.cancelAll()`,`kbengine@3082ab5` 的

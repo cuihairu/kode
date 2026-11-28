@@ -78,3 +78,6 @@ rust-toolchain.toml
 plugins/
 # KBEngine templates are copied from the installed extension at runtime.
 !typings/**
+
+# Engine source tree (templates/kbe) is repo-internal; never ship in the VSIX
+templates/kbe/

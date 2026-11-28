@@ -17,7 +17,7 @@ class OfficialReloadTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name) / 'scripts'
-        shutil.copytree(str(REPO / 'templates/demo-game/scripts'), str(self.root))
+        shutil.copytree(str(REPO / 'templates/assets/scripts'), str(self.root))
         self.engine = types.ModuleType('KBEngine')
         sys.modules['KBEngine'] = self.engine
         sys.path[:0] = [str(self.root / 'common'), str(self.root / 'base')]

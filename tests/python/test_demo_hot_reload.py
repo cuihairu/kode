@@ -17,7 +17,7 @@ import urllib.error
 import urllib.request
 
 REPO = Path(__file__).resolve().parents[2]
-TEMPLATE = REPO / 'templates/demo-game/scripts'
+TEMPLATE = REPO / 'templates/assets/scripts'
 
 
 def worker(root, role, peer):

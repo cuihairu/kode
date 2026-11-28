@@ -31,7 +31,7 @@ import {
 const check = (text: string) => computeTypesXmlStructureFindings(text);
 const codesOf = (text: string) => check(text).map(f => f.code);
 
-/** demo 模板真实形态(templates/demo-game/scripts/entity_defs/types.xml)——合法基线零发现 */
+/** demo 模板真实形态(templates/assets/scripts/entity_defs/types.xml)——合法基线零发现 */
 const DEMO_SHAPED = [
   '<root>',
   '  <ITEM_ID> UINT16 </ITEM_ID>',

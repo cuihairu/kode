@@ -8,7 +8,7 @@
  * 引擎仓不在模板里,engineRoot 如实空。任一步取消(Esc/关对话框)零写入。
  *
  * DEMO-GAME-006:保护流下沉为共享 createProjectFromTemplate,demo 游戏
- * 模板(templates/demo-game,磁盘装载)与最小清单同面创建。
+ * 模板(templates/assets,磁盘装载)与最小清单同面创建。
  */
 
 import * as fs from 'fs';
@@ -92,7 +92,7 @@ export async function createMinimalProject(
 }
 
 /**
- * demo 游戏项目创建(DEMO-GAME-006):templates/demo-game(夹具游戏子集)
+ * demo 游戏项目创建(DEMO-GAME-006):templates/assets(夹具游戏子集)
  * 装载后走与最小项目完全相同的保护面。模板读取失败/为空如实报错返回,
  * 不落半套;成功后同样按导入识别链建 profile。
  */

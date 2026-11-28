@@ -291,6 +291,10 @@ describe('.vscodeignore 打包防漏锁(批103,工单④类)', () => {
         'target/',
         '**/target/',
         '*.pdb',
+        // 2026-11-28 修仙 MMO demo 战役: 引擎源树 templates/kbe(demo 工程
+        // templates/assets 的 engineRoot)入仓供索引与起服,源码 137M 绝不进
+        // vsix——引擎二进制走 nightly 产物面,不入 git 也不进包
+        'templates/kbe/',
         '!out/extension.js',
         // 2026-10-27 Python 索引重构: parser worker 是随包分发的第二个
         // bundle(esbuild src/pythonParserWorker.ts),运行期按 __dirname 加载

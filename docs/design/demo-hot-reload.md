@@ -28,7 +28,7 @@ HTTP **只使用 xreload**，不通过 `KBEngine.reloadScript` 偷换执行方�
 
 ## 3. xreload 的 Python 3.7.3 适配
 
-来源：[Guido 原版](https://svn.python.org/projects/sandbox/trunk/xreload/xreload.py)。源码位置为 `templates/demo-game/scripts/common/xreload.py`，同步到 demo 夹具同路径；不需要在引擎里安装 pip 包。
+来源：[Guido 原版](https://svn.python.org/projects/sandbox/trunk/xreload/xreload.py)。源码位置为 `templates/assets/scripts/common/xreload.py`，同步到 demo 夹具同路径；不需要在引擎里安装 pip 包。
 
 保留原版“在原模块 globals 中执行并原位修补函数/类”的机制，移除 `imp`、`types.ClassType`、`im_func` 等旧接口。适配 import 元数据、函数默认值/关键字默认值/注解、普通/静态/类方法、property、相同布局 slots、同模块继承和 `super()`；保留已有函数、类和实例身份，读取源码而非依赖 pyc 的时间戳缓存。
 

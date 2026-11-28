@@ -12,7 +12,7 @@ import { identifyProjectLayout } from '../src/projectImport';
 // 导航测试实体注册。两侧漂移(夹具改了模板没跟,或模板被手改)都在这里红。
 
 const REPO_ROOT = path.resolve(__dirname, '..');
-const TEMPLATE_ROOT = path.join(REPO_ROOT, 'templates', 'demo-game');
+const TEMPLATE_ROOT = path.join(REPO_ROOT, 'templates', 'assets');
 const FIXTURE_ROOT = path.join(REPO_ROOT, 'tests', 'fixtures', 'kbengine-demo-assets');
 
 const loadTemplateFiles = (): Map<string, string> =>

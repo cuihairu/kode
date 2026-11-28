@@ -1,5 +1,5 @@
 /**
- * demo 游戏模板装载(DEMO-GAME-006):把 templates/demo-game 目录(夹具
+ * demo 游戏模板装载(DEMO-GAME-006):把 templates/assets 目录(夹具
  * tests/fixtures/kbengine-demo-assets 的游戏子集,Training/Elite 导航测试
  * 资产裁掉,entities.xml 收敛为游戏实体注册表)读成项目创建清单
  * (projectTemplate.ProjectTemplateEntry)。
@@ -20,7 +20,7 @@ import * as path from 'path';
 import type { ProjectTemplateEntry } from './backend/projectTemplate';
 
 /** 模板在扩展安装目录内的相对根(测试/产品同路径形态) */
-export const DEMO_GAME_TEMPLATE_RELATIVE_ROOT = 'templates/demo-game';
+export const DEMO_GAME_TEMPLATE_RELATIVE_ROOT = 'templates/assets';
 
 /** 装载依赖(注入以便测试;产品面走真实 fs) */
 export interface DemoGameTemplateFs {
