@@ -621,6 +621,12 @@
 			<Arg> UINT64 </Arg>
 			<Arg> UINT8 </Arg>
 		</reqUnsocketGem>
+		<!-- Talisman (DEMO-GAME-016): use one charge, cell-side AOE;
+		     last use destroys the entity. -->
+		<reqUseTalisman>
+			<Exposed> true </Exposed>
+			<Arg> UINT64 </Arg>
+		</reqUseTalisman>
 		<!-- Bounty board (DEMO-GAME-061): post (desc + reward escrow on
 		     base), accept, turn in for the reward. -->
 		<reqPostBounty>
@@ -700,6 +706,13 @@
 			<Exposed> true </Exposed>
 			<Arg> UINT32 </Arg>
 		</reqSeizeBody>
+		<!-- Talisman AOE (DEMO-GAME-016): base relays radius + power
+		     after consuming a charge; damages monsters in range via
+		     the receiveDamage path. -->
+		<useTalismanBlast>
+			<Arg> UINT16 </Arg>
+			<Arg> UINT32 </Arg>
+		</useTalismanBlast>
 	</CellMethods>
 
 </root>

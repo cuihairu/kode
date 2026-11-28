@@ -45,3 +45,6 @@ SECT_DONATE_EXP_RATIO = 0.1        # ratio of donated experience kept as sect fu
 DEMO_BAG_CAPACITY = 20             # slot cap of the Inventory bag
 DEMO_DROP_ITEM_ID = 1              # item dropped per monster kill (妖兽材料)
 DEMO_DROP_ITEM_COUNT = 1           # stack count added per kill
+
+# Talisman AOE (DEMO-GAME-016)
+DEMO_TALISMAN_RADIUS = 6.0        # blast radius around the caster

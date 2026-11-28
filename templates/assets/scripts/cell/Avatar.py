@@ -137,6 +137,26 @@ class Avatar(KBEngine.Entity):
 			print("[demo-evidence] %s" % msg, flush=True)
 			evidenceLog(msg)
 
+	def useTalismanBlast(self, radius, power):
+		"""
+		KBEngine method.(Avatar.def CellMethods,DEMO-GAME-016 符箓 AOE)
+		以自身为心 radius 内存活 Monster 过 receiveDamage(同一伤害路径,
+		无五行乘数——符箓是外物,不吃灵根亲和)。
+		"""
+		hits = 0
+		for e in self.entitiesInRange(radius, "Monster"):
+			if getattr(e, "className", "") != "Monster":
+				continue
+			if getattr(e, "hp", 0) <= 0:
+				continue
+			e.receiveDamage(power, self.id)
+			hits += 1
+		msg = "Avatar[%i] TALISMAN BLAST radius=%.1f power=%i hits=%i" % (
+			self.id, radius, power, hits,
+		)
+		print("[demo-evidence] %s" % msg, flush=True)
+		evidenceLog(msg)
+
 	def receiveDamage(self, damage, attackerId):
 		"""
 		KBEngine method.(Avatar.def CellMethods,Monster 近身攻击入口)

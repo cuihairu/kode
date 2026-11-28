@@ -10,7 +10,7 @@ DEMO_SPACE_INDEX = 1
 
 
 # 迷你 ARPG 战斗常数:见 common/DemoConsts.py(base/cell 共用)
-from DemoConsts import DEMO_BAG_CAPACITY, DEMO_LEVEL_UP_STEP, DEMO_RESPAWN_DELAY
+from DemoConsts import DEMO_BAG_CAPACITY, DEMO_LEVEL_UP_STEP, DEMO_RESPAWN_DELAY, DEMO_TALISMAN_RADIUS
 
 TIMER_RESPAWN = 1
 
@@ -383,3 +383,39 @@ class Avatar(KBEngine.Proxy):
 			return
 		equip.onUnsocketGem(gemIndex)
 		self._recomputeAttrs("unsocket gem idx=%i" % gemIndex)
+
+	def _findOwnedItem(self, itemDbid, className):
+		"""本机找归属 Item 系实体(Equipment/Talisman 共用,线性扫)。"""
+		return next((e for e in KBEngine.entities.values()
+			if getattr(e, "dbid", 0) == itemDbid
+			and getattr(e, "ownerDbid", 0) == self.dbid
+			and getattr(e, "className", "") == className), None)
+
+	def reqUseTalisman(self, talismanDbid):
+		"""
+		Exposed.(DEMO-GAME-016 用符:基座消耗次数→cell AOE)
+		consume_talisman 纯函数判耗尽;耗尽走 deleteFromDB+destroy 自毁
+		(016 行裁明 writeToDB 后 deleteFromDB 位);否则次数-1 并把
+		radius+power 转发 cell useTalismanBlast(范围妖兽过 receiveDamage)。
+		"""
+		talisman = self._findOwnedItem(talismanDbid, "Talisman")
+		if talisman is None:
+			DEBUG_MSG("Avatar[%i].reqUseTalisman: dbid=%i not local" % (self.id, talismanDbid))
+			return
+		remaining, destroyed = cultivation.consume_talisman(talisman.charges)
+		if destroyed:
+			talisman.deleteFromDB()
+			talisman.destroy()
+			msg = "Avatar[%i] TALISMAN dbid=%i DEPLETED -> destroyed" % (self.id, talismanDbid)
+			print("[demo-evidence] %s" % msg, flush=True)
+			evidenceLog(msg)
+			power = 0
+		else:
+			talisman.charges = remaining
+			power = talisman.power
+			msg = "Avatar[%i] TALISMAN dbid=%i use -> charges=%i power=%i" % (
+				self.id, talismanDbid, remaining, power)
+			print("[demo-evidence] %s" % msg, flush=True)
+			evidenceLog(msg)
+		if self.cell is not None and power > 0:
+			self.cell.useTalismanBlast(int(DEMO_TALISMAN_RADIUS), power)

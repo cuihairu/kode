@@ -1,0 +1,20 @@
+<root>
+	<!-- Talisman 符箓(DEMO-GAME-016):Parent=Item,消耗次数符。
+	     效果=范围伤害妖兽(AOE 走 cell 面复用 receiveDamage 路径);
+	     次数耗尽基座 deleteFromDB+destroy 自毁。 -->
+	<Parent> Item </Parent>
+
+	<Properties>
+		<charges>
+			<Type> UINT8 </Type>
+			<Default> 3 </Default>
+			<Persistent> true </Persistent>
+		</charges>
+		<!-- Effect strength snapshot at forge time (damage per use). -->
+		<power>
+			<Type> UINT32 </Type>
+			<Default> 30 </Default>
+			<Persistent> true </Persistent>
+		</power>
+	</Properties>
+</root>
