@@ -1,5 +1,11 @@
 # 修仙 MMO demo 需求与双覆盖矩阵(DEMO-GAME-007..042 战役总纲)
 
+> **需求已迁 cultivation 仓（履道，2026-11-28 CULTIVATION-001）**：
+> docs/design/cultivation-demo.md 的需求书/覆盖矩阵/验收面五份整理文档已落
+> https://github.com/PowerPiping/cultivation `docs/`（requirements/engine-coverage/
+> toolchain-walkthrough/acceptance/backlog）。本文档转 **kode 工具链视角存档**——
+> 历史勾行仍在 kode todo.md，履道侧状态对账看 cultivation 仓 docs/backlog.md。
+
 - 立项:2026-11-28 用户令。原 templates/demo-game 迷你 ARPG 骨架升格为**修仙类 MMO** demo,
   并要求「当成一个正常的游戏来创建」真实测试——不再拿残缺 demo 假测。
 - 仓库布局(2026-11-28 落地,载体 01c8dd7a):
