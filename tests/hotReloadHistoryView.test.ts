@@ -847,6 +847,26 @@ describe('renderHistoryPanelHtml 虚拟滚动(HR-UI-007 上千记录渲染面)',
     expect(html).toContain('"requestId":"r100"');
     expect(html).toContain('list.addEventListener(\'scroll\', renderWindow)');
   });
+
+  it('RUST-414 回归:生成脚本两态皆可编译(行模板内联引号不得截断单引号 JS 串)', () => {
+    const parseScript = (html: string): void => {
+      const match = html.match(/<script>([\s\S]*?)<\/script>/);
+      expect(match).not.toBeNull();
+      // Compile-only check: new Function throws SyntaxError when the generated
+      // script is unparseable (raw 'Enter' once terminated the single-quoted
+      // row-template string and killed the whole virtual-scroll panel script).
+      // eslint-disable-next-line no-new-func
+      new Function(match![1]);
+    };
+    parseScript(render(makeRows(205)));
+    parseScript(renderPanel({
+      state: { feedStatus: { watchMode: '', target: '' }, filter: {}, page: 1 },
+      rows: makeRows(150),
+      total: 150,
+      hasMore: false,
+      pageSize: 50
+    }));
+  });
 });
 
 describe('HR-STATE-007 残差展示与检索面(面板列/下拉/树多字段)', () => {

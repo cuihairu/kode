@@ -432,7 +432,10 @@ ${
         ? '<code title="' + escJs(entry.hash) + '">' + escJs(entry.hash.slice(0, 12)) + '…</code>'
         : '';
       const rowLabel = escJs(LOCATE_PREFIX) + escJs(entry.fileUri.split('/').pop());
-      return '<tr data-file="' + escJs(entry.fileUri) + '" tabindex="0" aria-label="' + rowLabel + '" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openRow(this); }" title="' + escJs(ROW_TITLE) + '">' +
+      // Inline handler quotes: use &quot; (decoded by the HTML attribute parser)
+      // — raw 'Enter' inside this single-quoted JS string is a SyntaxError that
+      // kills the whole panel script.
+      return '<tr data-file="' + escJs(entry.fileUri) + '" tabindex="0" aria-label="' + rowLabel + '" onkeydown="if (event.key === &quot;Enter&quot; || event.key === &quot; &quot;) { event.preventDefault(); openRow(this); }" title="' + escJs(ROW_TITLE) + '">' +
         '<td class="module">' + moduleCell + '</td>' +
         '<td><code title="' + escJs(entry.fileUri) + '">' + escJs(fileName) + '</code></td>' +
         '<td>' + escJs(entry.rootId && entry.rootId.length > 0 ? entry.rootId : DEFAULT_ROOT) + '</td>' +
