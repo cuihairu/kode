@@ -5,7 +5,7 @@
 - 仓库布局(2026-11-28 落地,载体 01c8dd7a):
   - `templates/assets` —— assetsRoot(demo 游戏工程模板,随 VSIX 分发,`kbengine.project.createDemoGame` 物化);
   - `templates/kbe` —— engineRoot(引擎源树 res/src/tools,入仓但 `.vscodeignore` 排除,绝不进 VSIX);
-  - 引擎二进制:linux/windows 两版,strip 后发 kbengine fork(cuihairu/kbengine)nightly 滚动 release 资产,不入 git(2026-11-28 用户拍板,DEMO-GAME-030/031;正式版本号 release 须用户亲发);
+  - 引擎二进制:linux/windows 两版,strip 后发 kbengine fork(cuihairu/kbengine),不入 git(2026-11-28 用户拍板,DEMO-GAME-030/031;正式版本号 release 须用户亲发)。**第一个版本已发**:tag `0.1.2`(打在未动的上游 commit 080fd4f0b)+release 三资产(DEMO-GAME-030/031 已勾);后续滚动走 nightly release 资产(DEMO-GAME-043 残项);
   - 真机验收链:`scripts/run-demo-engine.sh`(复制工程→改写 MySQL/网卡→真九进程起服→验收锚 grep)。
 
 ## 一、游戏需求书(逐系统)
