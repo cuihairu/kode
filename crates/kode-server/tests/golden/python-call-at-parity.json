@@ -1,8 +1,8 @@
 {
   "generator": "kode-server dump-python-call-at-golden",
-  "fileCount": 73,
-  "probeCount": 111677,
-  "hitCount": 7609,
+  "fileCount": 74,
+  "probeCount": 119776,
+  "hitCount": 7828,
   "files": [
     {
       "file": "tests/fixtures/electron-ws/.kbengine/inferred/scripts/base/Boxe.py",
@@ -13288,10 +13288,10 @@
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/base/Avatar.py",
-      "probeCount": 3875,
+      "probeCount": 4735,
       "hits": [
         {
-          "line": 11,
+          "line": 12,
           "character": 37,
           "receiverName": "DemoConsts",
           "methodName": "py",
@@ -13299,7 +13299,7 @@
           "activeArgument": 0
         },
         {
-          "line": 11,
+          "line": 12,
           "character": 38,
           "receiverName": "DemoConsts",
           "methodName": "py",
@@ -13307,7 +13307,7 @@
           "activeArgument": 0
         },
         {
-          "line": 11,
+          "line": 12,
           "character": 39,
           "receiverName": "DemoConsts",
           "methodName": "py",
@@ -13315,7 +13315,7 @@
           "activeArgument": 0
         },
         {
-          "line": 11,
+          "line": 12,
           "character": 40,
           "receiverName": "DemoConsts",
           "methodName": "py",
@@ -13323,7 +13323,7 @@
           "activeArgument": 0
         },
         {
-          "line": 11,
+          "line": 12,
           "character": 41,
           "receiverName": "DemoConsts",
           "methodName": "py",
@@ -13331,7 +13331,7 @@
           "activeArgument": 0
         },
         {
-          "line": 11,
+          "line": 12,
           "character": 42,
           "receiverName": "DemoConsts",
           "methodName": "py",
@@ -13339,7 +13339,7 @@
           "activeArgument": 0
         },
         {
-          "line": 11,
+          "line": 12,
           "character": 43,
           "receiverName": "DemoConsts",
           "methodName": "py",
@@ -13347,7 +13347,7 @@
           "activeArgument": 0
         },
         {
-          "line": 11,
+          "line": 12,
           "character": 44,
           "receiverName": "DemoConsts",
           "methodName": "py",
@@ -13355,7 +13355,7 @@
           "activeArgument": 0
         },
         {
-          "line": 11,
+          "line": 12,
           "character": 45,
           "receiverName": "DemoConsts",
           "methodName": "py",
@@ -13363,7 +13363,7 @@
           "activeArgument": 0
         },
         {
-          "line": 11,
+          "line": 12,
           "character": 46,
           "receiverName": "DemoConsts",
           "methodName": "py",
@@ -13371,7 +13371,7 @@
           "activeArgument": 0
         },
         {
-          "line": 11,
+          "line": 12,
           "character": 47,
           "receiverName": "DemoConsts",
           "methodName": "py",
@@ -13379,7 +13379,7 @@
           "activeArgument": 0
         },
         {
-          "line": 11,
+          "line": 12,
           "character": 48,
           "receiverName": "DemoConsts",
           "methodName": "py",
@@ -13387,7 +13387,7 @@
           "activeArgument": 0
         },
         {
-          "line": 11,
+          "line": 12,
           "character": 49,
           "receiverName": "DemoConsts",
           "methodName": "py",
@@ -13395,7 +13395,7 @@
           "activeArgument": 0
         },
         {
-          "line": 11,
+          "line": 12,
           "character": 50,
           "receiverName": "DemoConsts",
           "methodName": "py",
@@ -13403,7 +13403,7 @@
           "activeArgument": 0
         },
         {
-          "line": 19,
+          "line": 20,
           "character": 25,
           "receiverName": "Proxy",
           "methodName": "__init__",
@@ -13411,7 +13411,7 @@
           "activeArgument": 0
         },
         {
-          "line": 19,
+          "line": 20,
           "character": 26,
           "receiverName": "Proxy",
           "methodName": "__init__",
@@ -13419,7 +13419,7 @@
           "activeArgument": 0
         },
         {
-          "line": 19,
+          "line": 20,
           "character": 27,
           "receiverName": "Proxy",
           "methodName": "__init__",
@@ -13427,7 +13427,7 @@
           "activeArgument": 0
         },
         {
-          "line": 19,
+          "line": 20,
           "character": 28,
           "receiverName": "Proxy",
           "methodName": "__init__",
@@ -13435,7 +13435,7 @@
           "activeArgument": 0
         },
         {
-          "line": 19,
+          "line": 20,
           "character": 29,
           "receiverName": "Proxy",
           "methodName": "__init__",
@@ -13443,7 +13443,7 @@
           "activeArgument": 0
         },
         {
-          "line": 19,
+          "line": 20,
           "character": 30,
           "receiverName": "Proxy",
           "methodName": "__init__",
@@ -13451,7 +13451,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 17,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13459,7 +13459,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 18,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13467,7 +13467,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 19,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13475,7 +13475,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 20,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13483,7 +13483,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 21,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13491,7 +13491,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 22,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13499,7 +13499,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 23,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13507,7 +13507,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 24,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13515,7 +13515,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 25,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13523,7 +13523,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 26,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13531,7 +13531,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 27,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13539,7 +13539,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 28,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13547,7 +13547,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 29,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13555,7 +13555,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 30,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13563,7 +13563,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 31,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13571,7 +13571,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 32,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13579,7 +13579,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 33,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13587,7 +13587,7 @@
           "activeArgument": 0
         },
         {
-          "line": 25,
+          "line": 26,
           "character": 34,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -13595,7 +13595,247 @@
           "activeArgument": 0
         },
         {
-          "line": 33,
+          "line": 36,
+          "character": 50,
+          "receiverName": "cultivation",
+          "methodName": "realm_of",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 36,
+          "character": 51,
+          "receiverName": "cultivation",
+          "methodName": "realm_of",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 36,
+          "character": 52,
+          "receiverName": "cultivation",
+          "methodName": "realm_of",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 36,
+          "character": 53,
+          "receiverName": "cultivation",
+          "methodName": "realm_of",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 36,
+          "character": 54,
+          "receiverName": "cultivation",
+          "methodName": "realm_of",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 36,
+          "character": 55,
+          "receiverName": "cultivation",
+          "methodName": "realm_of",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 36,
+          "character": 56,
+          "receiverName": "cultivation",
+          "methodName": "realm_of",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 36,
+          "character": 57,
+          "receiverName": "cultivation",
+          "methodName": "realm_of",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 36,
+          "character": 58,
+          "receiverName": "cultivation",
+          "methodName": "realm_of",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 36,
+          "character": 59,
+          "receiverName": "cultivation",
+          "methodName": "realm_of",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 36,
+          "character": 60,
+          "receiverName": "cultivation",
+          "methodName": "realm_of",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 36,
+          "character": 61,
+          "receiverName": "cultivation",
+          "methodName": "realm_of",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 36,
+          "character": 62,
+          "receiverName": "cultivation",
+          "methodName": "realm_of",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 36,
+          "character": 63,
+          "receiverName": "cultivation",
+          "methodName": "realm_of",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 36,
+          "character": 64,
+          "receiverName": "cultivation",
+          "methodName": "realm_of",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 36,
+          "character": 65,
+          "receiverName": "cultivation",
+          "methodName": "realm_of",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 36,
+          "character": 66,
+          "receiverName": "cultivation",
+          "methodName": "realm_of",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 39,
+          "character": 17,
+          "receiverName": "self",
+          "methodName": "writeToDB",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 39,
+          "character": 18,
+          "receiverName": "self",
+          "methodName": "writeToDB",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 46,
+          "character": 25,
+          "receiverName": "self",
+          "methodName": "onRealmUp",
+          "section": "ClientMethods",
+          "activeArgument": 0
+        },
+        {
+          "line": 46,
+          "character": 26,
+          "receiverName": "self",
+          "methodName": "onRealmUp",
+          "section": "ClientMethods",
+          "activeArgument": 0
+        },
+        {
+          "line": 46,
+          "character": 27,
+          "receiverName": "self",
+          "methodName": "onRealmUp",
+          "section": "ClientMethods",
+          "activeArgument": 0
+        },
+        {
+          "line": 46,
+          "character": 28,
+          "receiverName": "self",
+          "methodName": "onRealmUp",
+          "section": "ClientMethods",
+          "activeArgument": 0
+        },
+        {
+          "line": 46,
+          "character": 29,
+          "receiverName": "self",
+          "methodName": "onRealmUp",
+          "section": "ClientMethods",
+          "activeArgument": 0
+        },
+        {
+          "line": 46,
+          "character": 30,
+          "receiverName": "self",
+          "methodName": "onRealmUp",
+          "section": "ClientMethods",
+          "activeArgument": 0
+        },
+        {
+          "line": 46,
+          "character": 31,
+          "receiverName": "self",
+          "methodName": "onRealmUp",
+          "section": "ClientMethods",
+          "activeArgument": 0
+        },
+        {
+          "line": 46,
+          "character": 32,
+          "receiverName": "self",
+          "methodName": "onRealmUp",
+          "section": "ClientMethods",
+          "activeArgument": 0
+        },
+        {
+          "line": 46,
+          "character": 33,
+          "receiverName": "self",
+          "methodName": "onRealmUp",
+          "section": "ClientMethods",
+          "activeArgument": 0
+        },
+        {
+          "line": 46,
+          "character": 34,
+          "receiverName": "self",
+          "methodName": "onRealmUp",
+          "section": "ClientMethods",
+          "activeArgument": 0
+        },
+        {
+          "line": 46,
+          "character": 35,
+          "receiverName": "self",
+          "methodName": "onRealmUp",
+          "section": "ClientMethods",
+          "activeArgument": 0
+        },
+        {
+          "line": 57,
           "character": 26,
           "receiverName": "spaceByIndex",
           "methodName": "get",
@@ -13603,7 +13843,7 @@
           "activeArgument": 0
         },
         {
-          "line": 33,
+          "line": 57,
           "character": 27,
           "receiverName": "spaceByIndex",
           "methodName": "get",
@@ -13611,7 +13851,7 @@
           "activeArgument": 0
         },
         {
-          "line": 33,
+          "line": 57,
           "character": 28,
           "receiverName": "spaceByIndex",
           "methodName": "get",
@@ -13619,7 +13859,7 @@
           "activeArgument": 0
         },
         {
-          "line": 33,
+          "line": 57,
           "character": 29,
           "receiverName": "spaceByIndex",
           "methodName": "get",
@@ -13627,7 +13867,7 @@
           "activeArgument": 0
         },
         {
-          "line": 33,
+          "line": 57,
           "character": 30,
           "receiverName": "spaceByIndex",
           "methodName": "get",
@@ -13635,7 +13875,7 @@
           "activeArgument": 0
         },
         {
-          "line": 33,
+          "line": 57,
           "character": 31,
           "receiverName": "spaceByIndex",
           "methodName": "get",
@@ -13643,7 +13883,7 @@
           "activeArgument": 0
         },
         {
-          "line": 33,
+          "line": 57,
           "character": 32,
           "receiverName": "spaceByIndex",
           "methodName": "get",
@@ -13651,7 +13891,7 @@
           "activeArgument": 0
         },
         {
-          "line": 33,
+          "line": 57,
           "character": 33,
           "receiverName": "spaceByIndex",
           "methodName": "get",
@@ -13659,7 +13899,7 @@
           "activeArgument": 0
         },
         {
-          "line": 33,
+          "line": 57,
           "character": 34,
           "receiverName": "spaceByIndex",
           "methodName": "get",
@@ -13667,7 +13907,7 @@
           "activeArgument": 0
         },
         {
-          "line": 33,
+          "line": 57,
           "character": 35,
           "receiverName": "spaceByIndex",
           "methodName": "get",
@@ -13675,7 +13915,7 @@
           "activeArgument": 0
         },
         {
-          "line": 33,
+          "line": 57,
           "character": 36,
           "receiverName": "spaceByIndex",
           "methodName": "get",
@@ -13683,7 +13923,7 @@
           "activeArgument": 0
         },
         {
-          "line": 33,
+          "line": 57,
           "character": 37,
           "receiverName": "spaceByIndex",
           "methodName": "get",
@@ -13691,7 +13931,7 @@
           "activeArgument": 0
         },
         {
-          "line": 37,
+          "line": 61,
           "character": 23,
           "receiverName": "self",
           "methodName": "createCellEntity",
@@ -13699,7 +13939,7 @@
           "activeArgument": 0
         },
         {
-          "line": 37,
+          "line": 61,
           "character": 24,
           "receiverName": "self",
           "methodName": "createCellEntity",
@@ -13707,7 +13947,7 @@
           "activeArgument": 0
         },
         {
-          "line": 37,
+          "line": 61,
           "character": 25,
           "receiverName": "self",
           "methodName": "createCellEntity",
@@ -13715,7 +13955,7 @@
           "activeArgument": 0
         },
         {
-          "line": 37,
+          "line": 61,
           "character": 26,
           "receiverName": "self",
           "methodName": "createCellEntity",
@@ -13723,7 +13963,7 @@
           "activeArgument": 0
         },
         {
-          "line": 37,
+          "line": 61,
           "character": 27,
           "receiverName": "self",
           "methodName": "createCellEntity",
@@ -13731,7 +13971,7 @@
           "activeArgument": 0
         },
         {
-          "line": 37,
+          "line": 61,
           "character": 28,
           "receiverName": "self",
           "methodName": "createCellEntity",
@@ -13739,7 +13979,7 @@
           "activeArgument": 0
         },
         {
-          "line": 37,
+          "line": 61,
           "character": 29,
           "receiverName": "self",
           "methodName": "createCellEntity",
@@ -13747,7 +13987,7 @@
           "activeArgument": 0
         },
         {
-          "line": 37,
+          "line": 61,
           "character": 30,
           "receiverName": "self",
           "methodName": "createCellEntity",
@@ -13755,7 +13995,7 @@
           "activeArgument": 0
         },
         {
-          "line": 37,
+          "line": 61,
           "character": 31,
           "receiverName": "self",
           "methodName": "createCellEntity",
@@ -13763,7 +14003,7 @@
           "activeArgument": 0
         },
         {
-          "line": 37,
+          "line": 61,
           "character": 32,
           "receiverName": "self",
           "methodName": "createCellEntity",
@@ -13771,7 +14011,7 @@
           "activeArgument": 0
         },
         {
-          "line": 37,
+          "line": 61,
           "character": 33,
           "receiverName": "self",
           "methodName": "createCellEntity",
@@ -13779,7 +14019,7 @@
           "activeArgument": 0
         },
         {
-          "line": 37,
+          "line": 61,
           "character": 34,
           "receiverName": "self",
           "methodName": "createCellEntity",
@@ -13787,7 +14027,7 @@
           "activeArgument": 0
         },
         {
-          "line": 46,
+          "line": 70,
           "character": 25,
           "receiverName": "self",
           "methodName": "destroyCellEntity",
@@ -13795,7 +14035,7 @@
           "activeArgument": 0
         },
         {
-          "line": 46,
+          "line": 70,
           "character": 26,
           "receiverName": "self",
           "methodName": "destroyCellEntity",
@@ -13803,7 +14043,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 15,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13811,7 +14051,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 16,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13819,7 +14059,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 17,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13827,7 +14067,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 18,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13835,7 +14075,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 19,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13843,7 +14083,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 20,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13851,7 +14091,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 21,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13859,7 +14099,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 22,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13867,7 +14107,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 23,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13875,7 +14115,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 24,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13883,7 +14123,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 25,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13891,7 +14131,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 26,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13899,7 +14139,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 27,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13907,7 +14147,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 28,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13915,7 +14155,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 29,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13923,7 +14163,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 30,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13931,7 +14171,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 31,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13939,7 +14179,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 32,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13947,7 +14187,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 33,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13955,7 +14195,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 34,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13963,7 +14203,7 @@
           "activeArgument": 0
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 35,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13971,7 +14211,7 @@
           "activeArgument": 1
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 36,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13979,7 +14219,7 @@
           "activeArgument": 1
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 37,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13987,7 +14227,7 @@
           "activeArgument": 1
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 38,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -13995,7 +14235,7 @@
           "activeArgument": 2
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 39,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -14003,7 +14243,7 @@
           "activeArgument": 2
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 40,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -14011,7 +14251,7 @@
           "activeArgument": 2
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 41,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -14019,7 +14259,7 @@
           "activeArgument": 2
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 42,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -14027,7 +14267,7 @@
           "activeArgument": 2
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 43,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -14035,7 +14275,7 @@
           "activeArgument": 2
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 44,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -14043,7 +14283,7 @@
           "activeArgument": 2
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 45,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -14051,7 +14291,7 @@
           "activeArgument": 2
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 46,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -14059,7 +14299,7 @@
           "activeArgument": 2
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 47,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -14067,7 +14307,7 @@
           "activeArgument": 2
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 48,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -14075,7 +14315,7 @@
           "activeArgument": 2
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 49,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -14083,7 +14323,7 @@
           "activeArgument": 2
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 50,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -14091,7 +14331,7 @@
           "activeArgument": 2
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 51,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -14099,7 +14339,7 @@
           "activeArgument": 2
         },
         {
-          "line": 50,
+          "line": 74,
           "character": 52,
           "receiverName": "self",
           "methodName": "addTimer",
@@ -14107,7 +14347,7 @@
           "activeArgument": 2
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 17,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14115,7 +14355,7 @@
           "activeArgument": 0
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 18,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14123,7 +14363,7 @@
           "activeArgument": 0
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 19,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14131,7 +14371,7 @@
           "activeArgument": 0
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 20,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14139,7 +14379,7 @@
           "activeArgument": 0
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 21,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14147,7 +14387,7 @@
           "activeArgument": 0
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 22,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14155,7 +14395,7 @@
           "activeArgument": 0
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 23,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14163,7 +14403,7 @@
           "activeArgument": 0
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 24,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14171,7 +14411,7 @@
           "activeArgument": 0
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 25,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14179,7 +14419,7 @@
           "activeArgument": 0
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 26,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14187,7 +14427,7 @@
           "activeArgument": 0
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 27,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14195,7 +14435,7 @@
           "activeArgument": 0
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 28,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14203,7 +14443,7 @@
           "activeArgument": 0
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 29,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14211,7 +14451,7 @@
           "activeArgument": 0
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 30,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14219,7 +14459,7 @@
           "activeArgument": 0
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 31,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14227,7 +14467,7 @@
           "activeArgument": 0
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 32,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14235,7 +14475,7 @@
           "activeArgument": 0
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 33,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14243,7 +14483,7 @@
           "activeArgument": 0
         },
         {
-          "line": 61,
+          "line": 85,
           "character": 34,
           "receiverName": "self",
           "methodName": "enterSpace",
@@ -14251,7 +14491,7 @@
           "activeArgument": 0
         },
         {
-          "line": 77,
+          "line": 101,
           "character": 25,
           "receiverName": "self",
           "methodName": "onLevelUp",
@@ -14259,7 +14499,7 @@
           "activeArgument": 0
         },
         {
-          "line": 77,
+          "line": 101,
           "character": 26,
           "receiverName": "self",
           "methodName": "onLevelUp",
@@ -14267,7 +14507,7 @@
           "activeArgument": 0
         },
         {
-          "line": 77,
+          "line": 101,
           "character": 27,
           "receiverName": "self",
           "methodName": "onLevelUp",
@@ -14275,7 +14515,7 @@
           "activeArgument": 0
         },
         {
-          "line": 77,
+          "line": 101,
           "character": 28,
           "receiverName": "self",
           "methodName": "onLevelUp",
@@ -14283,7 +14523,7 @@
           "activeArgument": 0
         },
         {
-          "line": 77,
+          "line": 101,
           "character": 29,
           "receiverName": "self",
           "methodName": "onLevelUp",
@@ -14291,7 +14531,7 @@
           "activeArgument": 0
         },
         {
-          "line": 77,
+          "line": 101,
           "character": 30,
           "receiverName": "self",
           "methodName": "onLevelUp",
@@ -14299,7 +14539,7 @@
           "activeArgument": 0
         },
         {
-          "line": 77,
+          "line": 101,
           "character": 31,
           "receiverName": "self",
           "methodName": "onLevelUp",
@@ -14307,7 +14547,7 @@
           "activeArgument": 0
         },
         {
-          "line": 77,
+          "line": 101,
           "character": 32,
           "receiverName": "self",
           "methodName": "onLevelUp",
@@ -14315,7 +14555,7 @@
           "activeArgument": 0
         },
         {
-          "line": 77,
+          "line": 101,
           "character": 33,
           "receiverName": "self",
           "methodName": "onLevelUp",
@@ -14323,7 +14563,7 @@
           "activeArgument": 0
         },
         {
-          "line": 77,
+          "line": 101,
           "character": 34,
           "receiverName": "self",
           "methodName": "onLevelUp",
@@ -14331,7 +14571,7 @@
           "activeArgument": 0
         },
         {
-          "line": 93,
+          "line": 117,
           "character": 15,
           "receiverName": "self",
           "methodName": "destroy",
@@ -14339,7 +14579,7 @@
           "activeArgument": 0
         },
         {
-          "line": 93,
+          "line": 117,
           "character": 16,
           "receiverName": "self",
           "methodName": "destroy",
@@ -14347,7 +14587,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 28,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14355,7 +14595,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 29,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14363,7 +14603,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 30,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14371,7 +14611,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 31,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14379,7 +14619,7 @@
           "activeArgument": 1
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 32,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14387,7 +14627,7 @@
           "activeArgument": 1
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 33,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14395,7 +14635,7 @@
           "activeArgument": 1
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 34,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14403,7 +14643,7 @@
           "activeArgument": 2
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 35,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14411,7 +14651,7 @@
           "activeArgument": 2
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 36,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14419,7 +14659,7 @@
           "activeArgument": 2
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 37,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14427,7 +14667,7 @@
           "activeArgument": 2
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 38,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14435,7 +14675,7 @@
           "activeArgument": 2
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 39,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14443,7 +14683,7 @@
           "activeArgument": 2
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 40,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14451,7 +14691,7 @@
           "activeArgument": 2
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 41,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14459,7 +14699,7 @@
           "activeArgument": 2
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 42,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14467,7 +14707,7 @@
           "activeArgument": 2
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 43,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14475,7 +14715,7 @@
           "activeArgument": 2
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 44,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14483,7 +14723,7 @@
           "activeArgument": 2
         },
         {
-          "line": 117,
+          "line": 141,
           "character": 45,
           "receiverName": "self",
           "methodName": "onMonsterNear",
@@ -14491,7 +14731,7 @@
           "activeArgument": 2
         },
         {
-          "line": 126,
+          "line": 150,
           "character": 25,
           "receiverName": "self",
           "methodName": "destroyCellEntity",
@@ -14499,7 +14739,7 @@
           "activeArgument": 0
         },
         {
-          "line": 126,
+          "line": 150,
           "character": 26,
           "receiverName": "self",
           "methodName": "destroyCellEntity",
@@ -14507,7 +14747,7 @@
           "activeArgument": 0
         },
         {
-          "line": 128,
+          "line": 152,
           "character": 14,
           "receiverName": "self",
           "methodName": "destroy",
@@ -14515,7 +14755,7 @@
           "activeArgument": 0
         },
         {
-          "line": 128,
+          "line": 152,
           "character": 15,
           "receiverName": "self",
           "methodName": "destroy",
@@ -16332,7 +16572,7 @@
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/bots/Avatar.py",
-      "probeCount": 4185,
+      "probeCount": 4420,
       "hits": [
         {
           "line": 27,
@@ -16775,7 +17015,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 22,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16783,7 +17023,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 23,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16791,7 +17031,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 24,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16799,7 +17039,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 25,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16807,7 +17047,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 26,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16815,7 +17055,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 27,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16823,7 +17063,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 28,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16831,7 +17071,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 29,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16839,7 +17079,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 30,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16847,7 +17087,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 31,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16855,7 +17095,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 32,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16863,7 +17103,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 33,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16871,7 +17111,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 34,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16879,7 +17119,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 35,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16887,7 +17127,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 36,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16895,7 +17135,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 37,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16903,7 +17143,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 38,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16911,7 +17151,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 39,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -16919,7 +17159,7 @@
           "activeArgument": 0
         },
         {
-          "line": 117,
+          "line": 125,
           "character": 40,
           "receiverName": "self",
           "methodName": "reqAttack",
@@ -25576,7 +25816,7 @@
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/client/Avatar.py",
-      "probeCount": 327,
+      "probeCount": 397,
       "hits": []
     },
     {
@@ -42636,6 +42876,1524 @@
           "methodName": "failed",
           "section": null,
           "activeArgument": 1
+        }
+      ]
+    },
+    {
+      "file": "tests/fixtures/kbengine-demo-assets/scripts/common/cultivation.py",
+      "probeCount": 6934,
+      "hits": [
+        {
+          "line": 86,
+          "character": 20,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 86,
+          "character": 21,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 86,
+          "character": 22,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 86,
+          "character": 23,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 86,
+          "character": 24,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 86,
+          "character": 25,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 86,
+          "character": 26,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 86,
+          "character": 27,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 86,
+          "character": 28,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 86,
+          "character": 29,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 86,
+          "character": 30,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 86,
+          "character": 31,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 86,
+          "character": 32,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 86,
+          "character": 33,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 86,
+          "character": 34,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 88,
+          "character": 20,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 88,
+          "character": 21,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 88,
+          "character": 22,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 88,
+          "character": 23,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 88,
+          "character": 24,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 88,
+          "character": 25,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 88,
+          "character": 26,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 88,
+          "character": 27,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 88,
+          "character": 28,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 88,
+          "character": 29,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 88,
+          "character": 30,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 88,
+          "character": 31,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 88,
+          "character": 32,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 88,
+          "character": 33,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 88,
+          "character": 34,
+          "receiverName": "OVERCOMES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 90,
+          "character": 20,
+          "receiverName": "GENERATES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 90,
+          "character": 21,
+          "receiverName": "GENERATES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 90,
+          "character": 22,
+          "receiverName": "GENERATES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 90,
+          "character": 23,
+          "receiverName": "GENERATES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 90,
+          "character": 24,
+          "receiverName": "GENERATES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 90,
+          "character": 25,
+          "receiverName": "GENERATES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 90,
+          "character": 26,
+          "receiverName": "GENERATES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 90,
+          "character": 27,
+          "receiverName": "GENERATES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 90,
+          "character": 28,
+          "receiverName": "GENERATES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 90,
+          "character": 29,
+          "receiverName": "GENERATES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 90,
+          "character": 30,
+          "receiverName": "GENERATES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 90,
+          "character": 31,
+          "receiverName": "GENERATES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 90,
+          "character": 32,
+          "receiverName": "GENERATES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 90,
+          "character": 33,
+          "receiverName": "GENERATES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 90,
+          "character": 34,
+          "receiverName": "GENERATES",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 103,
+          "character": 28,
+          "receiverName": "rng",
+          "methodName": "randrange",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 103,
+          "character": 29,
+          "receiverName": "rng",
+          "methodName": "randrange",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 103,
+          "character": 30,
+          "receiverName": "rng",
+          "methodName": "randrange",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 103,
+          "character": 31,
+          "receiverName": "rng",
+          "methodName": "randrange",
+          "section": null,
+          "activeArgument": 1
+        },
+        {
+          "line": 103,
+          "character": 32,
+          "receiverName": "rng",
+          "methodName": "randrange",
+          "section": null,
+          "activeArgument": 1
+        },
+        {
+          "line": 103,
+          "character": 33,
+          "receiverName": "rng",
+          "methodName": "randrange",
+          "section": null,
+          "activeArgument": 1
+        },
+        {
+          "line": 104,
+          "character": 39,
+          "receiverName": "rng",
+          "methodName": "randrange",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 104,
+          "character": 40,
+          "receiverName": "rng",
+          "methodName": "randrange",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 104,
+          "character": 41,
+          "receiverName": "rng",
+          "methodName": "randrange",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 104,
+          "character": 42,
+          "receiverName": "rng",
+          "methodName": "randrange",
+          "section": null,
+          "activeArgument": 1
+        },
+        {
+          "line": 104,
+          "character": 43,
+          "receiverName": "rng",
+          "methodName": "randrange",
+          "section": null,
+          "activeArgument": 1
+        },
+        {
+          "line": 104,
+          "character": 44,
+          "receiverName": "rng",
+          "methodName": "randrange",
+          "section": null,
+          "activeArgument": 1
+        },
+        {
+          "line": 104,
+          "character": 45,
+          "receiverName": "rng",
+          "methodName": "randrange",
+          "section": null,
+          "activeArgument": 1
+        },
+        {
+          "line": 122,
+          "character": 25,
+          "receiverName": "roots",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 122,
+          "character": 26,
+          "receiverName": "roots",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 122,
+          "character": 27,
+          "receiverName": "roots",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 122,
+          "character": 28,
+          "receiverName": "roots",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 122,
+          "character": 29,
+          "receiverName": "roots",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 122,
+          "character": 30,
+          "receiverName": "roots",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 1
+        },
+        {
+          "line": 122,
+          "character": 31,
+          "receiverName": "roots",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 1
+        },
+        {
+          "line": 122,
+          "character": 32,
+          "receiverName": "roots",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 1
+        },
+        {
+          "line": 125,
+          "character": 26,
+          "receiverName": "ROOT_KEYS",
+          "methodName": "index",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 125,
+          "character": 27,
+          "receiverName": "ROOT_KEYS",
+          "methodName": "index",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 125,
+          "character": 28,
+          "receiverName": "ROOT_KEYS",
+          "methodName": "index",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 125,
+          "character": 29,
+          "receiverName": "ROOT_KEYS",
+          "methodName": "index",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 125,
+          "character": 30,
+          "receiverName": "ROOT_KEYS",
+          "methodName": "index",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 125,
+          "character": 31,
+          "receiverName": "ROOT_KEYS",
+          "methodName": "index",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 125,
+          "character": 32,
+          "receiverName": "ROOT_KEYS",
+          "methodName": "index",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 125,
+          "character": 33,
+          "receiverName": "ROOT_KEYS",
+          "methodName": "index",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 125,
+          "character": 34,
+          "receiverName": "ROOT_KEYS",
+          "methodName": "index",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 125,
+          "character": 35,
+          "receiverName": "ROOT_KEYS",
+          "methodName": "index",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 19,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 20,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 21,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 22,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 23,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 24,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 25,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 26,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 27,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 28,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 53,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 54,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 55,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 56,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 57,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 58,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 59,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 60,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 61,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 146,
+          "character": 62,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 1
+        },
+        {
+          "line": 146,
+          "character": 63,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 1
+        },
+        {
+          "line": 146,
+          "character": 64,
+          "receiverName": "slot",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 1
+        },
+        {
+          "line": 152,
+          "character": 21,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 22,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 23,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 24,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 25,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 26,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 27,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 28,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 29,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 30,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 31,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 32,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 33,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 34,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 35,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 36,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 37,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 38,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 39,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 40,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 41,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 42,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 43,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 44,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 45,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 46,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 47,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 48,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 49,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 50,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 51,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 52,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 53,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 54,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 55,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 152,
+          "character": 56,
+          "receiverName": "result",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 20,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 21,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 22,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 23,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 24,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 25,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 26,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 27,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 28,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 29,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 30,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 31,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 32,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 33,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 34,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 35,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 36,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 37,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 38,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 39,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 40,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 41,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 42,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 43,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 44,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 45,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 46,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 47,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 48,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 49,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 50,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 51,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 52,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 53,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 54,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 55,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 56,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 57,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 58,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 59,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 60,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 61,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 62,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 63,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 64,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 65,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 66,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 67,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 68,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 69,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 70,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 71,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 72,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 73,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 209,
+          "character": 74,
+          "receiverName": "math",
+          "methodName": "sqrt",
+          "section": null,
+          "activeArgument": 0
         }
       ]
     },

@@ -33,7 +33,10 @@ fn headless_collects_registered_entities_in_registry_order() {
     .expect("generate ok");
 
     let names = file_names(&files);
-    // 8 实体(entities.xml 文档序)+ 组件伴随;未登记的 Critical.def 不生成。
+    // 8 实体(entities.xml 文档序)+ 组件伴随 + FIXED_DICT 伴随
+    // (DEMO-GAME-010 起 demo types.xml 有被客户端面引用的裸 FIXED_DICT:
+    //  Avatar.spiritRoots: SPIRIT_ROOTS,Flags=BASE_AND_CLIENT 客户端可见);
+    // 未登记的 Critical.def 不生成。
     assert_eq!(
         names,
         vec![
@@ -45,6 +48,7 @@ fn headless_collects_registered_entities_in_registry_order() {
             "TrainingAvatar.py",
             "TrainingMonster.py",
             "EliteMonster.py",
+            "ClientSdkFixedDicts.py",
             "ClientSdkComponents.py",
         ]
     );
@@ -70,8 +74,13 @@ fn headless_collects_registered_entities_in_registry_order() {
     assert!(comps.content.contains("# 实体组件: Inventory"));
     assert!(comps.content.contains("class Inventory:"));
     assert!(comps.content.contains("    pass"));
-    // FIXED_DICT 伴随:demo types.xml 的 FIXED_DICT 未被客户端面引用 → 不产文件。
-    assert!(!names.contains(&"ClientSdkFixedDicts.py".to_string()));
+    // FIXED_DICT 伴随内容:SPIRIT_ROOTS 数据类在位(真产物锚,client-sdk-gen 实测)。
+    let fixed = files
+        .iter()
+        .find(|f| f.file_name == "ClientSdkFixedDicts.py")
+        .expect("ClientSdkFixedDicts.py");
+    assert!(fixed.content.contains("class SPIRIT_ROOTS:"));
+    assert!(fixed.content.contains("metal: int"));
 }
 
 /// types.xml 固定字典被客户端面引用时,headless 同样产 FIXED_DICT 伴随文件

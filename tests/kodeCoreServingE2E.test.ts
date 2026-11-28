@@ -40,9 +40,10 @@ suite('kode 定义面 rust 服务 e2e(真实二进制)', () => {
       version: 1,
       getText: () => text
     };
-    // 第 36 行(0 基 35)`<DetailLevel> MEDIUM </DetailLevel>`:词 MEDIUM 起点
+    // 第 57 行(0 基 56)`<DetailLevel> MEDIUM </DetailLevel>`(DEMO-GAME-011
+    // 修士属性面在 experience 后插三属性,行号整体下移):词 MEDIUM 起点
     // 字符偏移 = 3 tab + `<DetailLevel> `(13) = 16,取中 18。
-    const position = { line: 35, character: 18 };
+    const position = { line: 56, character: 18 };
 
     const location = await serveDefinitionFromRust(
       document as never,
@@ -51,9 +52,9 @@ suite('kode 定义面 rust 服务 e2e(真实二进制)', () => {
 
     expect(location).not.toBeNull();
     expect(location!.uri).toBe(DEF);
-    // 落点应在 <DetailLevels><MEDIUM>(文件第 61 行,0 基 60)附近
-    expect(location!.range.start.line).toBeGreaterThanOrEqual(60);
-    expect(location!.range.start.line).toBeLessThanOrEqual(62);
+    // 落点应在 <DetailLevels><MEDIUM>(DEMO-GAME-011 后文件第 82 行,0 基 81)附近
+    expect(location!.range.start.line).toBeGreaterThanOrEqual(80);
+    expect(location!.range.start.line).toBeLessThanOrEqual(82);
   }, 20_000);
 
   it('rust 轨道:非语料文档(schema)零请求直通 null', async () => {

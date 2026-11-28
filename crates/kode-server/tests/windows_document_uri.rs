@@ -37,7 +37,7 @@ fn windows_document_path_is_opened_and_served() {
             2,
             "textDocument/definition",
             json!({
-                "textDocument":{"uri":uri}, "position":{"line":35, "character":18}
+                "textDocument":{"uri":uri}, "position":{"line":56, "character":18}
             }),
         ),
     );
@@ -50,5 +50,5 @@ fn windows_document_path_is_opened_and_served() {
         location["uri"],
         "/D:/project/scripts/entity_defs/Avatar.def"
     );
-    assert_eq!(location["range"]["start"]["line"], 60);
+    assert_eq!(location["range"]["start"]["line"], 81);
 }

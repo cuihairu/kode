@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import KBEngine
+import cultivation
 from KBEDebug import *
 from Spaces import spaceByIndex
 
@@ -23,6 +24,29 @@ class Avatar(KBEngine.Proxy):
 		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 		self.enterSpace(DEMO_SPACE_INDEX)
+
+	def reqPractice(self):
+		"""
+		Exposed.(Avatar.def BaseMethods,修仙战役 DEMO-GAME-011)
+		修炼:经验 +PRACTICE_EXP_GAIN,过阈值即境界突破(realm+1)并 writeToDB
+		落真表;境界规则全在 cultivation 纯函数核(单测钉死),本层只采集与执行。
+		"""
+		before = self.realm
+		self.experience += cultivation.PRACTICE_EXP_GAIN
+		new_realm, _gained, _need = cultivation.realm_of(self.experience)
+		if new_realm != before:
+			self.realm = new_realm
+			self.writeToDB()
+			msg = "Avatar[%i] REALM UP %s->%s exp=%i (writeToDB)" % (
+				self.id, cultivation.REALM_NAMES[before], cultivation.REALM_NAMES[new_realm], self.experience,
+			)
+			print("[demo-evidence] %s" % msg, flush=True)
+			evidenceLog(msg)
+			if self.client is not None:
+				self.client.onRealmUp(new_realm)
+		else:
+			DEBUG_MSG("Avatar[%i].reqPractice exp=%i realm=%s" % (
+				self.id, self.experience, cultivation.REALM_NAMES[new_realm]))
 
 	def enterSpace(self, spaceIndex):
 		"""

@@ -1,5 +1,5 @@
 {
-  "corpusCount": 65,
+  "corpusCount": 66,
   "doclass": [
     {
       "class": "other",
@@ -108,6 +108,10 @@
     {
       "class": "other",
       "path": "scripts/common/KodeHotReload.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/cultivation.py"
     },
     {
       "class": "other",
@@ -315,8 +319,8 @@
           "bases": [
             "KBEngine.Proxy"
           ],
-          "class_end_line": 134,
-          "class_line": 16,
+          "class_end_line": 158,
+          "class_line": 17,
           "facet": "base",
           "file": "scripts/base/Avatar.py"
         },
@@ -331,7 +335,7 @@
         },
         {
           "bases": [],
-          "class_end_line": 11,
+          "class_end_line": 14,
           "class_line": 3,
           "facet": "client",
           "file": "scripts/client/Avatar.py"
@@ -668,6 +672,10 @@
       "reason": "not-script-layout"
     },
     {
+      "path": "scripts/common/cultivation.py",
+      "reason": "not-script-layout"
+    },
+    {
       "path": "scripts/common/training/__init__.py",
       "reason": "not-script-layout"
     },
@@ -915,6 +923,11 @@
       "name": "KodeHotReload",
       "owner": "unknown",
       "path": "scripts/common/KodeHotReload.py"
+    },
+    {
+      "name": "cultivation",
+      "owner": "unknown",
+      "path": "scripts/common/cultivation.py"
     },
     {
       "name": "__init__",

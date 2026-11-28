@@ -107,6 +107,14 @@ class Avatar(KBEngine.Entity):
 		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
+	def onRealmUp(self, realm):
+		"""
+		Client method.(Avatar.def ClientMethods,修仙战役 DEMO-GAME-011)
+		"""
+		msg = "bots Avatar[%s] onRealmUp realm=%s" % (self.id, realm)
+		print("[demo-evidence] %s" % msg, flush=True)
+		evidenceLog(msg)
+
 	def onHPChanged(self, hp):
 		"""
 		Client method.(Avatar.def ClientMethods)

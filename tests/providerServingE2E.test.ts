@@ -122,14 +122,14 @@ suite('kode Provider 端到端(真实二进制):同一文件五面+降级三臂(
     setKodeCoreShadowGate(gate);
     const location = await new KBEngineDefinitionProvider().provideDefinition(
       defDocument(),
-      new Position(35, 18)
+      new Position(56, 18)
     );
     expect(location).not.toBeNull();
     const loc = Array.isArray(location) ? location[0] : location;
     expect((loc as { uri: { fsPath: string } }).uri.fsPath).toBe(DEF);
     const startLine = (loc as { range: { start: { line: number } } }).range.start.line;
-    expect(startLine).toBeGreaterThanOrEqual(58);
-    expect(startLine).toBeLessThanOrEqual(62);
+    expect(startLine).toBeGreaterThanOrEqual(80);
+    expect(startLine).toBeLessThanOrEqual(82);
   }, 30_000);
 
   it('Avatar.def:诊断归并腿经真二进制出未知 Flags 错误(虚拟破档)', async () => {
@@ -212,7 +212,7 @@ suite('kode Provider 端到端(真实二进制):同一文件五面+降级三臂(
 
     const location = await new KBEngineDefinitionProvider().provideDefinition(
       defDocument(),
-      new Position(35, 18)
+      new Position(56, 18)
     );
     expect(location).not.toBeNull();
     const loc = Array.isArray(location) ? location[0] : location;
@@ -239,7 +239,7 @@ suite('kode Provider 端到端(真实二进制):同一文件五面+降级三臂(
 
     const location = await new KBEngineDefinitionProvider().provideDefinition(
       defDocument(),
-      new Position(35, 18)
+      new Position(56, 18)
     );
     expect(location).not.toBeNull();
     const loc = Array.isArray(location) ? location[0] : location;

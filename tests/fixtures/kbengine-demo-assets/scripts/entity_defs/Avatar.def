@@ -22,11 +22,32 @@
 			<Default> 100 </Default>
 		</hp>
 		<experience>
-			<!-- 基座持有(BASE_AND_CLIENT):cell 死亡销毁后经验不丢,重生满血回归 -->
+			<!-- 基座持有(BASE_AND_CLIENT):cell 死亡销毁后经验不丢,重生满血回归;
+			     修仙战役(DEMO-GAME-011)转持久化:writeToDB 落 tbl_Avatar 真列 -->
 			<Type> UINT32 </Type>
 			<Flags> BASE_AND_CLIENT </Flags>
 			<Default> 0 </Default>
+			<Persistent> true </Persistent>
 		</experience>
+		<!-- 修仙面(DEMO-GAME-011):境界/五灵根/个人属性,全部持久化。
+		     spiritRoots/attrs 由建角 roll 注入(DEMO-GAME-009 接线),
+		     值域与规则见 common/cultivation.py 纯函数核。 -->
+		<realm>
+			<Type> UINT8 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> 0 </Default>
+			<Persistent> true </Persistent>
+		</realm>
+		<spiritRoots>
+			<Type> SPIRIT_ROOTS </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Persistent> true </Persistent>
+		</spiritRoots>
+		<attrs>
+			<Type> ATTRS </Type>
+			<Flags> BASE </Flags>
+			<Persistent> true </Persistent>
+		</attrs>
 		<!-- 引擎保留字:cell 实体自带 position/direction(引擎建列),def 里再声明
 		     position 即 EntityDef::loadDefPropertys "position is limited" 拒载——
 		     真引擎起服验证发现后移除(DEMO-GAME-001)。 -->
@@ -69,6 +90,9 @@
 	</DetailLevels>
 
 	<ClientMethods>
+		<onRealmUp>
+			<Arg> UINT8 </Arg>
+		</onRealmUp>
 		<onHPChanged>
 			<Arg> UINT32 </Arg>
 		</onHPChanged>
@@ -83,6 +107,9 @@
 	</ClientMethods>
 
 	<BaseMethods>
+		<reqPractice>
+			<Exposed> true </Exposed>
+		</reqPractice>
 		<reqCastSkill>
 			<Exposed> true </Exposed>
 			<Arg> UINT32 </Arg>

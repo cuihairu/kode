@@ -10,3 +10,6 @@ class Avatar(object):
 
 	def onLevelUp(self, newLevel):
 		print("Avatar.onLevelUp: %i" % newLevel)
+
+	def onRealmUp(self, realm):
+		print("Avatar.onRealmUp: %i" % realm)
